@@ -1,0 +1,200 @@
+#+TITLE: 卷积网络实验
+#+AUTHOR: stupid-coder
+#+EMAIL: stupid-coder
+#+STARTUP: indent
+#+OPTIONS: H:2 ^:nil
+#+INDEX: (mxnet)
+
+#+BEGIN_QUOTE
+本文用来说明一些常见卷积网络结构的实验,从而学习相关知识点.本文中代码都是在 cpu 上运行,所以网络结构都是简化版本.
+#+END_QUOTE
+
+* 卷积神经网络
+  从 1998 年 LeNet 诞生,到 2012 年 AlexNet 在 ImageNet 分类比赛上大放异彩,使得卷积神经网络得到了新生.卷积神经网络的基础思想是利用图像天然的局部相关特性,使用局部链接提高模型对局部信息的敏感度,权值共享的方式减低模型参数,采样层来增强尺度不变性.采用反向传播算法自学习卷积核,从而避免了人工构造视觉特征需要大量专业知识的弊端.
+
+  本文会沿着如下路线进行说明和记录:
+  + =基础卷积神经网络= :: 一层卷积层+一层采样层+一层全链接层.
+  + =激活函数= :: 采用 tanh, softplus, relu 的卷积神经网络.
+  + =权值初始化= :: 采用 Xvair 的权值初始化.
+  + =网络结构= :: AlexNet,VGG,NiN,GoogLeNet,ResNet,DenseNet.
+  + =优化算法= :: sgd,adam
+  + =归一化方法= :: batch-norm,layer-norm,instance-norm,group-norm.
+  + =正则化方法= :: dropout,全局均值采样
+
+
+  最近在看李牧大神的<动手学深度学习>[fn:1],所以本文代码采用 mxnet 深度学习框架实现.数据集采用 CIFAR-10
+
+  评估标准除了传统的损失值和准确率,也会关注训练时间等一些指标.
+
+* 数据集
+采用和 mxnet 示例中使用的相同图像分类数据集 Fashion-MNIST[fn:2],该数据集要比原始的 MNIST 要复杂一点,如[[图 1]]所示:
+
+#+BEGIN_CENTER
+#+NAME: 图 1
+#+CAPTION: Fashion-MNIST 一些样本展示,每 3 行一个类别.
+[[file:assets/fashion-mnist-sprite.png]]
+#+END_CENTER
+
+*mxnet* 中 *gluon.data.vision* 模块已经内置了该数据集,读取方式如下:
+#+BEGIN_SRC python
+  def data():
+      return gdata.vision.FashionMNIST(train=True), gdata.vision.FashionMNIST(train=False)
+
+
+  def dataset(batch_size=64):
+      train_data, test_data = data()
+
+      transformer = gdata.vision.transforms.Compose([
+          gdata.vision.transforms.ToTensor()
+          ])
+
+      train_iter = gdata.DataLoader(train_data.transform_first(transformer),
+                                    batch_size=batch_size, shuffle=True)
+
+      test_iter = gdata.DataLoader(test_data.transform_first(transformer),
+                                   batch_size=batch_size, shuffle=True)
+
+
+      return train_iter, test_iter
+#+END_SRC
+
+标签数据为:
+| 标签 | 描述        |
+|------+-------------|
+|    0 | T-shirt/top |
+|    1 | Trouser     |
+|    2 | Pullover    |
+|    3 | Dress       |
+|    4 | Coat        |
+|    5 | Sandal      |
+|    6 | Shirt       |
+|    7 | Sneaker     |
+|    8 | Bag         |
+|    9 | Ankle boot  |
+
+* LeNet 卷积神经网络
+  卷积神经网络一般的网络结构为: [[conv]*+[pooling]*]* + [fc]*,即通过级联多组卷积层和采样层,然后级联一个或多个全链接层来实现.本文首先实现一个最为简单的卷积神经网络 LeNet[fn:3] 作为基础网络.
+
+  LeNet 出现较早,为第一个实用的卷积神经网络.整个网络结构如[[图 2]]所示,由 2 层卷积层和 2 个最大值采样层交替组成,最后级联 3 层全链接层作分类.整个网络采用 sigmoid 作为激活函数.
+
+  #+BEGIN_CENTER
+  #+NAME: 图 2
+  #+CAPTION: LeNet 网络结构.
+  [[file:assets/LeNet.png]]
+  #+END_CENTER
+
+** LeNet 网络结构
+#+BEGIN_SRC python
+  def build_LeNet():
+      net = nn.Sequential()
+      net.add(
+          nn.Conv2D(channels=6, kernel_size=5, strides=1, activation='sigmoid'),
+          nn.MaxPool2D(pool_size=2, strides=2),
+          nn.Conv2D(channels=16, kernel_size=5, activation='sigmoid'),
+          nn.MaxPool2D(pool_size=2, strides=2),
+          nn.Dense(120, activation='sigmoid'),
+          nn.Dense(84, activation='sigmoid'),
+          nn.Dense(10)
+      )
+      net.initialize()
+      return net
+#+END_SRC
+
+论文中,最后一层的全链接层为采用颈向基函数来计算前一层输出 84 神经元与 [7*12] 的位图的欧式距离来进行对应的预测的(如[[图 3]]所示):
+#+BEGIN_CENTER
+#+NAME: 图 3
+#+CAPTION: [7*12] 的位图.
+[[file:assets/RBF_bitmap.png]]
+#+END_CENTER
+
+本文并不采用这种方法,采用交叉熵作为损失函数,SGD 算法进行优化.但是保持了 LeNet 的网络结构.
+
+输入数据为 [28,28,1] 的彩色图像.可以通过如下代码对网络进行预初始化,并打印出每层网络输出:
+#+BEGIN_SRC python
+  def pre_initialize_net(net):
+      X = nd.random.uniform(shape=(1, 1, 28, 28)) # mxnet 中为[batch_size,channels,height,width]
+      for layer in net:
+          X = layer(X)
+          print(layer.name, "output shape:\t", X.shape)
+#+END_SRC
+
+  输出结果:
+#+BEGIN_EXAMPLE
+  conv0 output shape:	 (1, 6, 24, 24)
+  pool0 output shape:	 (1, 6, 12, 12)
+  conv1 output shape:	 (1, 16, 8, 8)
+  pool1 output shape:	 (1, 16, 4, 4)
+  dense0 output shape:	 (1, 120)
+  dense1 output shape:	 (1, 84)
+  dense2 output shape:	 (1, 10)
+#+END_EXAMPLE
+
+** 模型训练
+损失函数采用交叉熵损失,优化器采用随机梯度下降(/SGD/).
+
+#+BEGIN_SRC python
+  def train(net, trainer, train_iter, test_iter, loss, num_epochs=5):
+      train_ls = []
+      train_acc = []
+      test_ls = []
+      test_acc = []
+      for i in range(num_epochs):
+          train_ls_sum, train_acc_sum = 0, 0
+          begin_clock = time.clock()
+
+          for X, y in train_iter:
+              with autograd.record():
+                  y_hat = net(X)
+                  l = loss(y_hat, y).mean()
+              l.backward()
+              trainer.step(1)
+              train_ls_sum += l.asscalar()
+              train_acc_sum += accuracy(y_hat, y)
+
+          train_ls.append(train_ls_sum/len(train_iter))
+          train_acc.append(train_acc_sum/len(train_iter))
+          tloss, tacc = evaluate(test_iter, net, loss)
+          test_ls.append(tloss)
+          test_acc.append(tacc)
+
+          end_clock = time.clock()
+
+          print("epoch {} - train loss: {}, train accuracy: {}, test loss: {}, test_accuracy: {}, cost time:{}".format(
+              i+1, train_ls[-1], train_acc[-1], test_ls[-1], test_acc[-1], end_clock-begin_clock))
+      return train_ls, train_acc, test_ls, test_acc
+
+
+  def main(batch_size=64, lr=0.1):
+      net = build_LeNet()
+      describe_net(net)
+      train_iter, test_iter = dataset(batch_size)
+      trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate':lr}) # SGD 优化器
+      plot_loss_and_acc(train(net, trainer, train_iter, test_iter, gloss.SoftmaxCrossEntropyLoss()))
+#+END_SRC
+
+可以看到整个训练过程会将 batch 训练的损失值和准确值进行加和平均.然后在每次 epoch 之后计算在测试集上的损失值和准确性.对应的计算代码如下:
+
+#+BEGIN_SRC python
+  def accuracy(y_hat, y):
+      return (y_hat.argmax(axis=1) == y.astype('float32')).mean().asscalar()
+
+  def evaluate(data_iter, net, loss_fn):
+      acc = 0
+      loss = 0
+      for X,y in data_iter:
+          y_hat = net(X)
+          acc += accuracy(y_hat, y)
+          loss += loss_fn(y_hat, y).mean().asscalar()
+      return loss / len(data_iter), acc / len(data_iter)
+#+END_SRC
+
+
+* Footnotes
+
+[fn:3] Gradient-Based Learning Applied to Document Recognition
+
+[fn:2] https://github.com/zalandoresearch/fashion-mnist
+
+[fn:1] https://zh.diveintodeeplearning.org/index.html
+
+
