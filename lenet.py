@@ -8,9 +8,9 @@ import time
 import sys, os
 from helper import *
 
-def build_LeNet(activation='sigmoid'):
-    net = nn.Sequential()
-    net.add(
+def build_LeNet(restore_dir, activation='sigmoid'):
+    network = nn.Sequential()
+    network.add(
         nn.Conv2D(channels=6, kernel_size=5, strides=1, activation=activation),
         nn.MaxPool2D(pool_size=2, strides=2),
         nn.Conv2D(channels=16, kernel_size=5, activation=activation),
@@ -20,18 +20,26 @@ def build_LeNet(activation='sigmoid'):
         nn.Dense(10)
     )
 
-    if options.restore_dir:
-        restore(network, options.restore_dir)
+    if restore_dir:
+        restore(network, restore_dir)
     else:
-        network.initialize(ctx=_ctx)
+        network.initialize(ctx=ctx)
 
-    return net
+    return network
 
 def main(batch_size=64, lr=0.1):
-    network = build_LeNet('sigmoid')
+
+    options = parser.parse_args()
+
+    print(options)
+
+    network = build_LeNet(options.restore_dir, 'sigmoid')
+
     describe_net(network)
-    trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate':options.learning_rate})
-    run(network, trainer, gloss.SoftmaxCrossEntropyLoss())
+
+    trainer = gluon.Trainer(network.collect_params(), 'sgd', {'learning_rate': options.learning_rate})
+
+    run(network, trainer, gloss.SoftmaxCrossEntropyLoss(), options)
 
 if __name__ == "__main__":
     main()

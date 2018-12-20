@@ -10,23 +10,35 @@ import argparse
 import time
 import json
 import os
+import sys
 import logging
 
-__all__ = ['dataset', 'accuracy', 'evaluate', 'train', 'describe_net', 'plot_loss_and_acc', 'trygpu', 'parser', 'ctx']
+__all__ = ['dataset', 'accuracy', 'evaluate', 'train', 'run', 'describe_net', 'plot_loss_and_acc', 'trygpu', 'parser', 'ctx', 'restore']
 
 parser = argparse.ArgumentParser()
-parser.add_argument("batch_size", help="train's batch size", type=int, default=256)
-parser.add_argument("num_epochs", help="train epochs number", type=int, default=10)
-parser.add_argument("begin_epoch", help="begin epoch in this train process", type=int, default=1)
-parser.add_argument("learning_rate", help="learning rate in this train process", type=float, default=0.1)
-parser.add_argument("restore_dir", help="from where directory to restore the model", type=str, default=None)
-parser.add_argument("save_dir", help="to where directory to save the model's parameters and train test information", type=str)
+parser.add_argument("--batch_size", help="train's batch size", type=int, default=256)
+parser.add_argument("--num_epochs", help="train epochs number", type=int, default=10)
+parser.add_argument("--begin_epoch", help="begin epoch in this train process", type=int, default=1)
+parser.add_argument("--learning_rate", help="learning rate in this train process", type=float, default=0.1)
+parser.add_argument("--restore_dir", help="from where directory to restore the model", type=str, default=None)
+parser.add_argument("--save_dir", help="to where directory to save the model's parameters and train test information", type=str)
 
 _labels_literature = ["T-shirt/top","Trouser","Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
 
 _NETWORK_PARAMS = 'network.params'
 _TRAIN_INFO = 'train.info'
+
+def trygpu():
+    try:
+        ctx = mx.gpu()
+        a = nd.array([0], ctx=ctx)
+    except mx.base.MXNetError:
+        ctx = mx.cpu()
+    return ctx
+
 ctx = trygpu()
+
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
 def get_labels(labels):
     if isinstance(labels, list) or isinstance(labels, tuple):
@@ -71,20 +83,21 @@ def plot_dataset(images, labels, rows, cols):
 
 
 def plot_loss_and_acc(train_info, save_path):
+    epochs = len(train_info['train_loss'])
     plt.figure(figsize=(12, 12))
     plt.subplot(1,2,1)
     plt.xlabel("epochs")
     plt.ylabel("loss")
-    plt.plot(range(1, len(train_loss)+1), train_info['train_loss'], color='red', label="train-loss", marker='o')
-    plt.plot(range(1, len(test_loss)+1), train_info['test_loss'], color='blue', label="test-loss", marker='o')
+    plt.plot(range(1, epochs+1), train_info['train_loss'], color='red', label="train-loss", marker='o')
+    plt.plot(range(1, epochs+1), train_info['test_loss'], color='blue', label="test-loss", marker='o')
     plt.legend()
     plt.title("loss")
 
     plt.subplot(1,2,2)
     plt.xlabel("epochs")
     plt.ylabel("accuracy")
-    plt.plot(range(1, len(train_acc)+1), train_info['train_acc'], color='red', label="train-acc", marker='o')
-    plt.plot(range(1, len(test_acc)+1), train_info['test_acc'], color='blue', label="test-acc", marker='o')
+    plt.plot(range(1, epochs+1), train_info['train_acc'], color='red', label="train-acc", marker='o')
+    plt.plot(range(1, epochs+1), train_info['test_acc'], color='blue', label="test-acc", marker='o')
     plt.legend()
     plt.title("accuracy")
 
@@ -106,19 +119,15 @@ def evaluate(data_iter, net, loss_fn):
 
 def describe_net(net):
     X = nd.random.uniform(shape=(1, 1, 28, 28))
+    logging.info("network architecture")
     for layer in net:
         X = layer(X)
-        print(layer.name, "output shape:\t", X.shape)
+        logging.info("{} - output shape:{}".format(layer.name, X.shape))
+    logging.info("network architecture finished")
 
-def trygpu():
-    try:
-        ctx = mx.gpu()
-        a = nd.array([0], ctx=ctx)
-    except mx.base.MXNetError:
-        ctx = mx.cpu()
-    return ctx
 
 def train(net, trainer, train_iter, test_iter, loss, num_epochs):
+    logging.info("train on: {}".format(ctx))
     train_ls = []
     train_acc = []
     test_ls = []
@@ -150,45 +159,47 @@ def train(net, trainer, train_iter, test_iter, loss, num_epochs):
     return train_ls, train_acc, test_ls, test_acc
 
 
-def restore(network, restore_path, begin_epoch):
+def restore(network, restore_dir):
 
-    if os.path.exists(restore_path):
-        network_params = os.path.join(restore_path, _NETWORK_PARAMS)
+    if os.path.exists(restore_dir):
+        network_params = os.path.join(restore_dir, _NETWORK_PARAMS)
         if os.access(network_params, os.R_OK):
             logging.info("restore the network from {}".format(network_params))
             network.load_parameters(network_params, ctx=ctx)
         else:
             logging.fatal("falure to load the network from {}".format(network_params))
     else:
-        logging.fatal("{} restore directory not exists".format(restore_path))
+        logging.fatal("{} restore directory not exists".format(restore_dir))
 
 
-def save(network, restore_path, save_path, train_loss, train_acc, test_loss, test_acc):
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
+def save(network, restore_dir, save_dir, train_loss, train_acc, test_loss, test_acc):
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
 
-    restore_train_info = os.path.join(restore_path, _TRAIN_INFO)
-    if os.access(train_info, os.R_OK):
-        train_info = json.load(os.open(train_info))
-        train_info['train_loss'].extend(train_loss)
-        train_info['train_acc'].extend(train_acc)
-        train_info['test_loss'].extend(test_loss)
-        train_info['test_acc'].extend(test_acc)
+
+    if restore_dir:
+        restore_train_info = os.path.join(restore_dir, _TRAIN_INFO)
+        if os.access(restore_train_info, os.R_OK):
+            train_info = json.load(open(restore_train_info, 'r'))
+            train_info['train_loss'].extend(train_loss)
+            train_info['train_acc'].extend(train_acc)
+            train_info['test_loss'].extend(test_loss)
+            train_info['test_acc'].extend(test_acc)
     else:
         train_info = {'train_loss':train_loss, 'train_acc':train_acc,
                       'test_loss':test_loss, 'test_acc':test_acc}
 
-    plot_loss_and_acc(train_info, save_path)
-    json.dump(train_info, os.open(os.path.join(save_path, _TRAIN_INFO)))
-    network.save_parameters(save_path)
+    plot_loss_and_acc(train_info, save_dir)
+    json.dump(train_info, open(os.path.join(save_dir, _TRAIN_INFO), "w"))
+    network.save_parameters(os.path.join(save_dir, _NETWORK_PARAMS))
 
-def run(network, trainer, loss_fn):
-    options = parser.parse_args()
+def run(network, trainer, loss_fn, options):
 
     train_iter, test_iter = dataset(options.batch_size)
 
-    train_loss, train_acc, test_loss, test_acc = train(network, train_iter, test_iter, loss_fn, options.num_epochs)
+    train_loss, train_acc, test_loss, test_acc = train(network, trainer, train_iter, test_iter, loss_fn, options.num_epochs)
 
     save(network,
-         os.path.join(options.save_dir,"{}-{}-{}".format(options.begin_epochs,options.begin_epochs+options.num_epochs),int(test_acc[-1]*100)),
+         options.restore_dir,
+         os.path.join(options.save_dir,"{}-{}-{}".format(options.begin_epoch,options.begin_epoch+options.num_epochs,int(test_acc[-1]*100))),
          train_loss, train_acc, test_loss, test_acc)
