@@ -37,7 +37,7 @@ def trygpu(gpu):
         ctx = mx.cpu()
     return ctx
 
-ctx = trygpu(0)
+ctx = None
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logger = logging.getLogger(__name__)

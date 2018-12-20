@@ -7,6 +7,9 @@ from mxnet.gluon import loss as gloss, nn
 import time
 import sys, os
 from helper import *
+import logging
+
+logger = logging.getLogger(__name__)
 
 def build_LeNet(restore_dir, activation='sigmoid'):
     network = nn.Sequential()
