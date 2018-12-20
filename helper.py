@@ -39,7 +39,7 @@ def trygpu():
 ctx = trygpu()
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-
+logger = logging.getLogger(__name__)
 def get_labels(labels):
     if isinstance(labels, list) or isinstance(labels, tuple):
         return [_labels_literature[label] for label in labels]
@@ -49,7 +49,7 @@ def get_labels(labels):
 def data():
     return gdata.vision.FashionMNIST(train=True), gdata.vision.FashionMNIST(train=False)
 
-def dataset(batch_size=64):
+def dataset(batch_size):
     train_data, test_data = data()
 
     transformer = gdata.vision.transforms.Compose([
@@ -119,15 +119,15 @@ def evaluate(data_iter, net, loss_fn):
 
 def describe_net(net):
     X = nd.random.uniform(shape=(1, 1, 28, 28), ctx=ctx)
-    logging.info("network architecture")
+    logger.info("network architecture")
     for layer in net:
         X = layer(X)
-        logging.info("{} - output shape:{}".format(layer.name, X.shape))
-    logging.info("network architecture finished")
+        logger.info("{} - output shape:{}".format(layer.name, X.shape))
+    logger.info("network architecture finished")
 
 
 def train(net, trainer, train_iter, test_iter, loss, num_epochs):
-    logging.info("train on: {}".format(ctx))
+    logger.info("train on: {}".format(ctx))
     train_ls = []
     train_acc = []
     test_ls = []
@@ -137,7 +137,7 @@ def train(net, trainer, train_iter, test_iter, loss, num_epochs):
         begin_clock = time.clock()
 
         for X, y in train_iter:
-            X,y = X.as_in_context(ctx), y.as_in_context(ctx)
+            X, y = X.as_in_context(ctx), y.as_in_context(ctx)
             with autograd.record():
                 y_hat = net(X)
                 l = loss(y_hat, y).mean()
@@ -154,7 +154,7 @@ def train(net, trainer, train_iter, test_iter, loss, num_epochs):
 
         end_clock = time.clock()
 
-        print("epoch {} - train loss: {}, train accuracy: {}, test loss: {}, test_accuracy: {}, cost time:{}".format(
+        logger.info("epoch {} - train loss: {}, train accuracy: {}, test loss: {}, test_accuracy: {}, cost time:{}".format(
             i+1, train_ls[-1], train_acc[-1], test_ls[-1], test_acc[-1], end_clock-begin_clock))
     return train_ls, train_acc, test_ls, test_acc
 
@@ -164,12 +164,12 @@ def restore(network, restore_dir):
     if os.path.exists(restore_dir):
         network_params = os.path.join(restore_dir, _NETWORK_PARAMS)
         if os.access(network_params, os.R_OK):
-            logging.info("restore the network from {}".format(network_params))
+            logger.info("restore the network from {}".format(network_params))
             network.load_parameters(network_params, ctx=ctx)
         else:
-            logging.fatal("falure to load the network from {}".format(network_params))
+            logger.fatal("falure to load the network from {}".format(network_params))
     else:
-        logging.fatal("{} restore directory not exists".format(restore_dir))
+        logger.fatal("{} restore directory not exists".format(restore_dir))
 
 
 def save(network, restore_dir, save_dir, train_loss, train_acc, test_loss, test_acc):
@@ -189,7 +189,7 @@ def save(network, restore_dir, save_dir, train_loss, train_acc, test_loss, test_
         train_info = {'train_loss':train_loss, 'train_acc':train_acc,
                       'test_loss':test_loss, 'test_acc':test_acc}
 
-    plot_loss_and_acc(train_info, save_dir)
+    #plot_loss_and_acc(train_info, save_dir)
     json.dump(train_info, open(os.path.join(save_dir, _TRAIN_INFO), "w"))
     network.save_parameters(os.path.join(save_dir, _NETWORK_PARAMS))
 

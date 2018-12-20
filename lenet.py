@@ -27,7 +27,7 @@ def build_LeNet(restore_dir, activation='sigmoid'):
 
     return network
 
-def main(batch_size=64, lr=0.1):
+def main():
 
     options = parser.parse_args()
 
