@@ -119,6 +119,7 @@ def evaluate(data_iter, net, loss_fn):
     return loss.asscalar() / len(data_iter), acc.asscalar() / len(data_iter)
 
 def describe_net(net):
+    logger.info("ctx:{}".format(ctx))
     X = nd.random.uniform(shape=(1, 1, 28, 28), ctx=ctx)
     logger.info("network architecture")
     for layer in net:

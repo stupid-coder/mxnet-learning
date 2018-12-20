@@ -6,7 +6,7 @@ from mxnet import autograd, gluon, init, nd
 from mxnet.gluon import loss as gloss, nn
 import time
 import sys, os
-from helper import *
+import helper
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,25 +26,25 @@ def build_LeNet(restore_dir, activation='sigmoid'):
     if restore_dir:
         restore(network, restore_dir)
     else:
-        network.initialize(ctx=ctx)
+        network.initialize(ctx=helper.ctx)
 
     return network
 
 def main():
 
-    options = parser.parse_args()
+    options = helper.parser.parse_args()
 
     logger.info("run config:{}".format(options))
 
-    ctx = trygpu(options.gpu)
+    helper.ctx = helper.trygpu(options.gpu)
 
     network = build_LeNet(options.restore_dir, 'sigmoid')
 
-    describe_net(network)
+    helper.describe_net(network)
 
     trainer = gluon.Trainer(network.collect_params(), 'sgd', {'learning_rate': options.learning_rate})
 
-    run(network, trainer, gloss.SoftmaxCrossEntropyLoss(), options)
+    helper.run(network, trainer, gloss.SoftmaxCrossEntropyLoss(), options)
 
 if __name__ == "__main__":
     main()
