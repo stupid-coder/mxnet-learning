@@ -194,25 +194,37 @@
 在设定学习率为 0.1 时候,发现损失前期基本不下降.增大训练轮数发现,在很多轮之后,损失值和准确性有了很大的变化.如[[图 4]]所示:
 #+BEGIN_CENTER
 #+NAME: 图 4
-#+CAPTION: 均值初始化,学习率设置为 0.1,100 轮训练结果.模型收敛速度较慢.测试准确性只有 70%.
-[[file:assets/acc_loss/lenet-uniform-01-loss-acc.png]]
+#+CAPTION: 均值初始化,学习率设置为 0.1,100 轮训练结果.模型收敛速度较慢,经过 70 多个 epoch 之后才开始收敛.最终测试准确性只有 70%.
+[[file:assets/acc_loss/lenet-uniform-01-1-101-73-loss-acc.png]]
 #+END_CENTER
 
 两种原因影响模型训练出现这种情况:
 + 学习率设置太低
 + 权值初始化对模型收敛也有较大影响
 
-
+*** 调整学习率
 -----
 同样采用均值初始化,学习率设置为 1.0 后,结果如[[图 5]]所示:
 #+BEGIN_CENTER
 #+NAME: 图 5
-#+CAPTION: 均值初始化,学习率设置为 1.0,100 轮训练结果.可看到模型收敛速度加快.测试集上准确性有 90%
-[[file:assets/acc_loss/lenet-uniform-10-loss-acc.png]]
+#+CAPTION: 均值初始化,学习率设置为 1.0,100 轮训练结果.可看到模型收敛速度加快,在经过大概 10 个 epoch 后模型就开始收敛.最终测试集上准确性有 90%
+[[file:assets/acc_loss/lenet-uniform-10-1-101-90-loss-acc.png]]
 #+END_CENTER
 
-可以看到两个模型都还没有出现过拟合现象.分别保持学习率接着训练.
 
+-----
+可以看到两个模型都还没有出现明显过拟合现象.接着训练 100 轮,结果如[[图 6]]所示:
+#+NAME: 图 6
+#+CAPTION: 左图为学习率为 0.1.右图为学习率为 1.0. 可以看到学习率为 0.1 的模型还没有出现过拟合现象.而学习率 1.0 的模型出现了过拟合.
+[[file:assets/acc_loss/lenet-uniform-01-101-201-86-loss-acc.png]] [[file:assets/acc_loss/lenet-uniform-10-101-201-90-loss-acc.png]]
+
+-----
+接着对学习率为 0.1 的模型训练 100 轮,结果如[[图 7]]所示:
+#+NAME: 图 7
+#+CAPTION:
+
+
+*** 调整初始化策略
 
 * Footnotes
 
