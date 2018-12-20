@@ -5,9 +5,8 @@ import mxnet as mx
 from mxnet import autograd, gluon, init, nd
 from mxnet.gluon import loss as gloss, nn
 import time
-from utils import *
-
-ctx = trygpu()
+import sys, os
+from helper import *
 
 def build_LeNet(activation='sigmoid'):
     net = nn.Sequential()
@@ -20,15 +19,19 @@ def build_LeNet(activation='sigmoid'):
         nn.Dense(84, activation=activation),
         nn.Dense(10)
     )
-    net.initialize(ctx=ctx)
+
+    if options.restore_dir:
+        restore(network, options.restore_dir)
+    else:
+        network.initialize(ctx=_ctx)
+
     return net
 
 def main(batch_size=64, lr=0.1):
-    net = build_LeNet('sigmoid')
-    describe_net(net)
-    train_iter, test_iter = dataset(batch_size)
-    trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate':lr})
-    plot_loss_and_acc(*train(net, trainer, train_iter, test_iter, gloss.SoftmaxCrossEntropyLoss(), ctx, num_epochs=10))
+    network = build_LeNet('sigmoid')
+    describe_net(network)
+    trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate':options.learning_rate})
+    run(network, trainer, gloss.SoftmaxCrossEntropyLoss())
 
 if __name__ == "__main__":
     main()
