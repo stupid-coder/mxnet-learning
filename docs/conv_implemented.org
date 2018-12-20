@@ -188,6 +188,11 @@
       return loss / len(data_iter), acc / len(data_iter)
 #+END_SRC
 
+** 实验结果
+
+*** uniform, batch_size=256, lr=0.1, epochs=100
+
+
 
 * Footnotes
 
