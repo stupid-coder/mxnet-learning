@@ -24,7 +24,7 @@ def build_LeNet(restore_dir, activation='sigmoid'):
     )
 
     if restore_dir:
-        restore(network, restore_dir)
+        helper.restore(network, restore_dir)
     else:
         network.initialize(ctx=helper.ctx)
 
