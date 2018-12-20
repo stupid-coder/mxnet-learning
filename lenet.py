@@ -31,7 +31,9 @@ def main():
 
     options = parser.parse_args()
 
-    print(options)
+    logger.info("run config:{}".format(options))
+
+    ctx = trygpu(options.gpu)
 
     network = build_LeNet(options.restore_dir, 'sigmoid')
 

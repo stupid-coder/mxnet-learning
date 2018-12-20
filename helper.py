@@ -22,15 +22,16 @@ parser.add_argument("--begin_epoch", help="begin epoch in this train process", t
 parser.add_argument("--learning_rate", help="learning rate in this train process", type=float, default=0.1)
 parser.add_argument("--restore_dir", help="from where directory to restore the model", type=str, default=None)
 parser.add_argument("--save_dir", help="to where directory to save the model's parameters and train test information", type=str)
+parser.add_argument('--gpu', help="which gpu to use", type=int, default=0)
 
 _labels_literature = ["T-shirt/top","Trouser","Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
 
 _NETWORK_PARAMS = 'network.params'
 _TRAIN_INFO = 'train.info'
 
-def trygpu():
+def trygpu(gpu):
     try:
-        ctx = mx.gpu()
+        ctx = mx.gpu(gpu)
         a = nd.array([0], ctx=ctx)
     except mx.base.MXNetError:
         ctx = mx.cpu()
