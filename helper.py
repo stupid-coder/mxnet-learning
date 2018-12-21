@@ -164,9 +164,8 @@ def train(net, trainer, train_iter, test_iter, loss, options):
             trainer.step(1)
 
             if options.run_circle_test:
-                tloss, tacc = evaluate(test_iter, net, loss)
-                train_ls.append(tloss)
-                train_acc.append(tacc)
+                train_ls.append(float(l.asscalar()))
+                train_acc.append(float(accuracy(y_hat, y)))
             else:
                 train_ls_sum += l.asscalar()
                 train_acc_sum += accuracy(y_hat, y)
