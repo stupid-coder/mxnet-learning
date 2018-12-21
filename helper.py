@@ -158,8 +158,10 @@ def train(net, trainer, train_iter, test_iter, loss, options):
             l.backward()
 
             if options.use_circle_lr or options.run_circle_test:
-                lr.append(circle_learning_rate(i*len(train_iter)+epoch_count, options.lr_min, options.lr_max, options.step_size*len(train_iter)))
-                trainer.set_learning_rate(lr[-1])
+                circle_lr = circle_learning_rate(i*len(train_iter)+epoch_count, options.lr_min, options.lr_max, options.step_size*len(train_iter))
+                print(circle_lr)
+                lr.append(circle_lr)
+                trainer.set_learning_rate(circle_lr)
                 epoch_count += 1
             trainer.step(1)
 

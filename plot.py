@@ -8,7 +8,7 @@ import helper
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: plot [type] [info's path]")
+        print("Usage: plot [acc_loss|circle_lr_test] [info's path]")
         sys.exit(-1)
     else:
         if sys.argv[1] == "acc_loss":
@@ -22,3 +22,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
