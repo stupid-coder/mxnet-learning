@@ -199,7 +199,9 @@ def train(net, trainer, train_iter, test_iter, loss, options):
 def circle_learning_rate(iter_count, base_lr, max_lr, step_size):
     cycle = math.floor( 1 + iter_count / (2 * step_size) )
     ratio = abs( iter_count / step_size - 2 * cycle + 1 )
-    return base_lr + (max_lr-base_lr) * max( (1-ratio), 0 )
+    lr = base_lr + (max_lr-base_lr) * max( (1-ratio), 0 )
+    print("cycle:{}\tratio:{}\tlr:{}".format(cycle, ratio, lr))
+    return lr
 
 
 def restore(network, restore_dir):
