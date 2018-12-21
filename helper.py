@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import mxnet as mx
-from mxnet import nd, autograd
-from mxnet.gluon import data as gdata
+from mxnet import nd, autograd, gluon
+from mxnet.gluon import data as gdata, loss as gloss
 from matplotlib import pyplot as plt
 import numpy as np
 import argparse
@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import logging
+import math
 
 __all__ = ['dataset', 'accuracy', 'evaluate', 'train', 'run', 'describe_net', 'plot_loss_and_acc', 'trygpu', 'parser', 'ctx', 'restore']
 
@@ -24,10 +25,17 @@ parser.add_argument("--restore_dir", help="from where directory to restore the m
 parser.add_argument("--save_dir", help="to where directory to save the model's parameters and train test information", type=str)
 parser.add_argument('--gpu', help="which gpu to use", type=int, default=0)
 
+parser.add_argument('--run_circle_test', help="run circle learning rate to find learning rate min max", action="store_true")
+parser.add_argument('--use_circle_lr', help="use circle lr train model", type=bool, default=False)
+parser.add_argument('--lr_min', help="min learning rate", type=float, default=0.0001)
+parser.add_argument("--lr_max", help="max learning rate", type=float, default=1)
+parser.add_argument("--step_size", help="step size for circle learning, multiple of the iter count of single epoch", type=int, default=None)
+
 _labels_literature = ["T-shirt/top","Trouser","Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
 
 _NETWORK_PARAMS = 'network.params'
 _TRAIN_INFO = 'train.info'
+_LR_MIN_MAX = 'lr-min-max.info'
 
 def trygpu(gpu):
     try:
@@ -128,37 +136,69 @@ def describe_net(net):
     logger.info("network architecture finished")
 
 
-def train(net, trainer, train_iter, test_iter, loss, num_epochs):
+def train(net, trainer, train_iter, test_iter, loss, options):
     logger.info("train on: {}".format(ctx))
     train_ls = []
     train_acc = []
+    lr = []
     test_ls = []
     test_acc = []
-    for i in range(num_epochs):
+
+    for i in range(options.num_epochs):
         train_ls_sum, train_acc_sum = 0, 0
         begin_clock = time.clock()
 
+        epoch_count = 0
         for X, y in train_iter:
+
             X, y = X.as_in_context(ctx), y.as_in_context(ctx)
             with autograd.record():
                 y_hat = net(X)
                 l = loss(y_hat, y).mean()
             l.backward()
-            trainer.step(1)
-            train_ls_sum += l.asscalar()
-            train_acc_sum += accuracy(y_hat, y)
 
-        train_ls.append(train_ls_sum/len(train_iter))
-        train_acc.append(train_acc_sum/len(train_iter))
-        tloss, tacc = evaluate(test_iter, net, loss)
-        test_ls.append(tloss)
-        test_acc.append(tacc)
+            if options.use_circle_lr or options.run_circle_test:
+                lr.append(circle_learning_rate(i*len(train_iter)+epoch_count, options.lr_min, options.lr_max, options.step_size*len(train_iter)))
+                trainer.set_learning_rate(lr[-1])
+                epoch_count += 1
+            trainer.step(1)
+
+            if options.run_circle_test:
+                tloss, tacc = evaluate(test_iter, net, loss)
+                train_ls.append(tloss)
+                train_acc.append(tacc)
+            else:
+                train_ls_sum += l.asscalar()
+                train_acc_sum += accuracy(y_hat, y)
+
+        if not options.run_circle_test:
+            train_ls.append(train_ls_sum/len(train_iter))
+            train_acc.append(train_acc_sum/len(train_iter))
+
+
+            tloss, tacc = evaluate(test_iter, net, loss)
+            test_ls.append(tloss)
+            test_acc.append(tacc)
 
         end_clock = time.clock()
 
         logger.info("epoch {} - train loss: {}, train accuracy: {}, test loss: {}, test_accuracy: {}, cost time:{}".format(
-            i+1, train_ls[-1], train_acc[-1], test_ls[-1], test_acc[-1], end_clock-begin_clock))
-    return train_ls, train_acc, test_ls, test_acc
+            i+1,
+            train_ls[-1] if not options.run_circle_test else np.mean(train_ls[-len(train_iter):]),
+            train_acc[-1] if not options.run_circle_test else np.mean(train_acc[-len(train_iter):]),
+            test_ls[-1] if not options.run_circle_test else [],
+            test_acc[-1] if not options.run_circle_test else [],
+            end_clock-begin_clock))
+    if options.run_circle_test:
+        return train_ls, train_acc, lr
+    else:
+        return train_ls, train_acc, test_ls, test_acc
+
+
+def circle_learning_rate(iter_count, base_lr, max_lr, step_size):
+    cycle = math.floor( 1 + iter_count / (2 * step_size) )
+    ratio = abs( iter_count / step_size - 2 * cycle + 1 )
+    return base_lr + (max_lr-base_lr) * max( (1-ratio), 0 )
 
 
 def restore(network, restore_dir):
@@ -195,13 +235,57 @@ def save(network, restore_dir, save_dir, train_loss, train_acc, test_loss, test_
     json.dump(train_info, open(os.path.join(save_dir, _TRAIN_INFO), "w"))
     network.save_parameters(os.path.join(save_dir, _NETWORK_PARAMS))
 
-def run(network, trainer, loss_fn, options):
+def run_train(network, trainer, loss_fn, options):
 
     train_iter, test_iter = dataset(options.batch_size)
 
-    train_loss, train_acc, test_loss, test_acc = train(network, trainer, train_iter, test_iter, loss_fn, options.num_epochs)
+    train_loss, train_acc, test_loss, test_acc = train(network, trainer, train_iter, test_iter, loss_fn, options)
 
     save(network,
          options.restore_dir,
          os.path.join(options.save_dir,"{}-{}-{}".format(options.begin_epoch,options.begin_epoch+options.num_epochs,int(test_acc[-1]*100))),
          train_loss, train_acc, test_loss, test_acc)
+
+def plot_lr_min_max(info, save_dir):
+    plt.figure(figsize=(12,12))
+    plt.subplot(2,1,1)
+    plt.xlabel("learning-rate")
+    plt.xticks()
+    plt.ylabel("loss")
+    plt.plot(info["lr"], info["loss"], color='red', marker='o', markersize=2)
+    plt.title("learning-rate-loss")
+
+    plt.subplot(2,1,2)
+    plt.xlabel("learning-rate")
+    plt.ylabel("accuracy")
+    plt.plot(info["lr"], info["acc"], color='red', marker='o', markersize=2)
+    plt.title("learning-rate-accuracy")
+
+    plt.savefig(os.path.join(save_dir,"lr_min_max.png"))
+
+
+def save_lr_min_max(loss, acc, lr, save_dir):
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    info = {"loss": loss, "acc": acc, "lr": lr}
+
+    json.dump(info, open(os.path.join(save_dir, _LR_MIN_MAX), 'w'))
+
+def run_lr_min_max(network, trainer, loss_fn, options):
+    train_iter, test_iter = dataset(options.batch_size)
+
+    trainer = gluon.Trainer(network.collect_params(), 'sgd', {'learning_rate':0})
+
+    loss, acc, lr = train(network, trainer, train_iter, test_iter, loss_fn, options)
+
+    save_lr_min_max(loss,acc,lr,save_dir=options.save_dir)
+
+def run(network, trainer, loss_fn, options):
+    if options.run_circle_test:
+        run_lr_min_max(network, trainer, loss_fn, options)
+    else:
+        run_train(network, trainer, loss_fn, options)
+
+
+

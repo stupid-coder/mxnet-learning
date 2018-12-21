@@ -11,6 +11,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+helper.parser.add_argument("--activation", help="network's activation function", type=str, default='sigmoid')
+
 def build_LeNet(restore_dir, activation='sigmoid'):
     network = nn.Sequential()
     network.add(
@@ -38,7 +40,7 @@ def main():
 
     helper.ctx = helper.trygpu(options.gpu)
 
-    network = build_LeNet(options.restore_dir, 'sigmoid')
+    network = build_LeNet(options.restore_dir, options.activation)
 
     helper.describe_net(network)
 
