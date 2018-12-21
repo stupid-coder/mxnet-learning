@@ -148,7 +148,7 @@ def train(net, trainer, train_iter, test_iter, loss, options):
         train_ls_sum, train_acc_sum = 0, 0
         begin_clock = time.clock()
 
-        epoch_count = 0
+        epoch_count = 0.0
         for X, y in train_iter:
 
             X, y = X.as_in_context(ctx), y.as_in_context(ctx)
