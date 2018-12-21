@@ -248,14 +248,47 @@ LeCun 的论文中提出的最优学习率就无法直接计算,因为涉及到 
 学习率在训练过程中一般也不是一成不变的,一般常规做法是在网络前几轮训练采用较大的学习率,使得网络能够尽快开始收敛;随着训练过程,对学习率进行衰减,从而避免较大学习率无法收敛到极小的问题.
 #+END_QUOTE
 
-** 学习率上下界
+** 周期性学习率调整
 可以想到的简单方法就是使用不同学习率在模型上简单训练几个 epoch,然后观察学习率和准确性的关系,从而确定一个学习率的大体值,在后许训练中采用学习率衰减方法.
 
 论文<Cyclical Learning Rates for Training Neural Networks>[fn:5] 中给出了一个找寻学习率上下界的方法:在前几轮训练中,以使学习率从低到高线性增加,观察对应的准确性.将准确性开始提升的对应学习率设置为下界,将准确性开始变差或者开始上下波动的时候设置为上界.从而找到学习率的上下解.
 
+周期性学习率调整代码如下:
+#+BEGIN_SRC python
+  def circle_learning_rate(iter_count, base_lr, max_lr, step_size):
+      cycle = math.floor( 1 + iter_count / (2 * step_size) )
+      ratio = abs( iter_count / step_size - 2 * cycle + 1 )
+      return base_lr + (max_lr-base_lr) * max( (1-ratio), 0 )
+#+END_SRC
+
+其中,iter_count 为训练迭代次数,base_lr 和 max_lr 为周期性调整学习率的下界和上界,step_siz 为调整周期的一半迭代次数.学习率调整的变化图如下所示:
+-----
+#+BEGIN_CENTER
+#+NAME: 图 6
+#+CAPTION: 三角周期性调整习率策略.蓝色线表示学习率在上下学习率边界调整,step_size 为一个调整周期的一般迭代次数.
+[[file:assets/circle-lr.png]]
+#+END_CENTER
 
 
-** 周期性学习率调整 
+*** 周期性学习率上下界
+论文中提出了通过在多个 epoch 中迭代递增学习率,然后通过观察学习率和损失值及准确性的关系确定最优学习率区间.将 loss 开始显著下降作为 base_lr,在 loss 开始进入平缓区或者有点上升时为 max_lr.
+
+只需要利用上述的周期学习率调整,将 step_size 设置为最大迭代次数,就可以保证在训练周期中学习率递增.
+
+采用 lenet 网络结构,8 个 epochs 训练周期.训练结果如下:
+-----
+#+BEGIN_CENTER
+#+NAME: 图 7
+#+CAPTION: LeNet 周期学习率测试.可以确定学习率设置为 base_lr=0.015,max_lr=0.06.在 0.015 时,loss 开始下降,在 0.06 的时候 loss 开始进入平缓,有一些上升.表示学习率有点偏大了.
+[[file:assets/lenet_circle_lr_test.png]]
+#+END_CENTER
+
+*** 周期性学习率训练结果
+基于上述确定的学习率上下界 base_lr=0.015 和 max_lr=0.06,设置 step_size 为,采用周期性学习率调整算法进行训练 300 轮.结果如下:
+-----
+#+NAME: 图 8
+#+CAPTION:
+
 
 ** 衰减学习
 在[[http://cs231n.github.io/neural-networks-3/][cs231n]]中介绍了多种递减学习率的方法,例如如下:
@@ -265,6 +298,55 @@ LeCun 的论文中提出的最优学习率就无法直接计算,因为涉及到 
 
 
 * 调整初始化策略
+
+** Xvair 初始化策略
+
+** He 初始化
+
+* 激活函数
+
+
+** tanh
+
+** softplus
+
+** relu
+
+
+* 网络结构
+
+** AlexNet
+
+** VGGNet
+
+** Inception
+
+** ResNet
+
+** DenseNet
+
+** MobileNet
+
+* 优化算法
+
+** Adam
+
+
+* 归一化方法 
+
+* 正则化
+
+** L1/L2
+
+** Dropout
+
+
+
+* 数据增强
+
+* 模型集成
+
+* 模型压缩&剪枝
 
 * Footnotes
 

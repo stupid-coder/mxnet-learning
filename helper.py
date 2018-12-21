@@ -26,7 +26,7 @@ parser.add_argument("--save_dir", help="to where directory to save the model's p
 parser.add_argument('--gpu', help="which gpu to use", type=int, default=0)
 
 parser.add_argument('--run_circle_test', help="run circle learning rate to find learning rate min max", action="store_true")
-parser.add_argument('--use_circle_lr', help="use circle lr train model", type=bool, default=False)
+parser.add_argument('--use_circle_lr', help="use circle lr train model", action="store_true")
 parser.add_argument('--lr_min', help="min learning rate", type=float, default=0.0001)
 parser.add_argument("--lr_max", help="max learning rate", type=float, default=1)
 parser.add_argument("--step_size", help="step size for circle learning, multiple of the iter count of single epoch", type=int, default=None)
@@ -159,7 +159,6 @@ def train(net, trainer, train_iter, test_iter, loss, options):
 
             if options.use_circle_lr or options.run_circle_test:
                 circle_lr = circle_learning_rate(i*len(train_iter)+epoch_count, options.lr_min, options.lr_max, options.step_size*len(train_iter))
-                print(circle_lr)
                 lr.append(circle_lr)
                 trainer.set_learning_rate(circle_lr)
                 epoch_count += 1
@@ -199,9 +198,7 @@ def train(net, trainer, train_iter, test_iter, loss, options):
 def circle_learning_rate(iter_count, base_lr, max_lr, step_size):
     cycle = math.floor( 1 + iter_count / (2 * step_size) )
     ratio = abs( iter_count / step_size - 2 * cycle + 1 )
-    lr = base_lr + (max_lr-base_lr) * max( (1-ratio), 0 )
-    print("cycle:{}\tratio:{}\tlr:{}".format(cycle, ratio, lr))
-    return lr
+    return base_lr + (max_lr-base_lr) * max( (1-ratio), 0 )
 
 
 def restore(network, restore_dir):
@@ -249,21 +246,40 @@ def run_train(network, trainer, loss_fn, options):
          os.path.join(options.save_dir,"{}-{}-{}".format(options.begin_epoch,options.begin_epoch+options.num_epochs,int(test_acc[-1]*100))),
          train_loss, train_acc, test_loss, test_acc)
 
-def plot_lr_min_max(info, save_dir):
+def plot_lr_min_max(info, save_dir, freq):
+
+    def average(x):
+        s = 0
+        count = 0
+        avg = []
+        for d in x:
+            s += d
+            count += 1
+            if count == freq:
+                avg.append(s/count)
+                s = 0
+                count = 0
+        if count != 0:
+            avg.append(s / count)
+
+        return avg
+
     plt.figure(figsize=(12,12))
     plt.subplot(2,1,1)
     plt.xlabel("learning-rate")
-    plt.xticks()
     plt.ylabel("loss")
-    plt.plot(info["lr"], info["loss"], color='red', marker='o', markersize=2)
+    plt.plot(average(info["lr"]), average(info['loss']), color='red', marker='o', markersize=2)
+    plt.grid(linestyle='-.', which='both')
     plt.title("learning-rate-loss")
 
     plt.subplot(2,1,2)
     plt.xlabel("learning-rate")
     plt.ylabel("accuracy")
-    plt.plot(info["lr"], info["acc"], color='red', marker='o', markersize=2)
+    plt.plot(average(info["lr"]), average(info["acc"]), color='red', marker='o', markersize=2)
+    plt.grid(linestyle='-.')
     plt.title("learning-rate-accuracy")
 
+    plt.show()
     plt.savefig(os.path.join(save_dir,"lr_min_max.png"))
 
 
