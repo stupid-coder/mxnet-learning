@@ -152,7 +152,7 @@ def train(net, trainer, train_iter, test_iter, loss, options):
         epoch_count = 0.0
 
         if options.decay and i != 0 and i % options.step_size == 0:
-            lr = trainer.get_learning_rate() * options.decay
+            lr = trainer.learning_rate * options.decay
             trainer.set_learning_rate(lr)
 
 
