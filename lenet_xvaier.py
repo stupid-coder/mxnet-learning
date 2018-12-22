@@ -11,9 +11,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-helper.parser.add_argument("--activation", help="network's activation function", type=str, default='sigmoid')
+helper.parser.add_argument("--activation", help="network's activation function", type=str, default='tanh')
 
-def build_LeNet(restore_dir, activation='sigmoid'):
+def build_LeNet(restore_dir, activation):
     network = nn.Sequential()
     network.add(
         nn.Conv2D(channels=6, kernel_size=5, strides=1, activation=activation),
@@ -28,7 +28,7 @@ def build_LeNet(restore_dir, activation='sigmoid'):
     if restore_dir:
         helper.restore(network, restore_dir)
     else:
-        network.initialize(ctx=helper.ctx)
+        network.initialize(ctx=helper.ctx, init=init.Xavier())
 
     return network
 

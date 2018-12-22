@@ -299,21 +299,124 @@ LeCun 的论文中提出的最优学习率就无法直接计算,因为涉及到 
 + =1/t 衰减= :: 具有公式 $\alpha=\alpha_{0}/(1+kt)$,其中 $\alpha_{0},k$ 为超参,t 为训练次数.
 
 *** 步衰减
-采用 10 个 epoch 衰减 0.5 的策略:
-
+初始学习率设置为 1.0,采用 10 个 epoch 衰减 0.5 的策略,训练 100 轮结果如下:
+-----
+#+BEGIN_CENTER
+#+NAME: 图 9
+#+CAPTION: 可以看到前期由于采用 1.0 学习率,在经过 10 个左右 epoch 后,损失值就开始下降.最终准确性达到 0.83.
+[[file:assets/acc_loss/lenet-uniform-10-05-decay-loss-acc.png]]
+#+END_CENTER
 
 * 调整初始化策略
+不管是从[[图 4]]还是从[[图 8]]都可以看到在训练的前期损失值都有一个不下将的区间,该区间的长短由学习率的大小决定;大的学习率可以很快的进入损失值下降的区间;小的学习率需要较长时间来进入损失值下降区间.直观上将该区间内,模型在一层层初始化网络权值,学习率大初始化的快.那么有没有其他方法可以加快初始化过程呢.这里就要用到一些权值初始化方法.
 
-** Xvair 初始化策略
+** Xavier 初始化策略
+Glorot 在论文<Understanding the diffculty of training deep feedforward neural networks> 通过观察不同激活函数和不同初始化策略下激活值的分布提出了叫做 Xavier 的权值初始化策略.论文中采用了均值采样 $U\left[-\frac{1}{\sqrt{n}},\frac{1}{\sqrt{n}}\right]$ 作为实验初始化策略,其中 n 为输入的神经元个数.
 
+*** sigmoid 作为激活函数
+首先论文观察 4 层采用 sigmoid 作为激活函数的激活值分布:
+-----
+#+BEGIN_CENTER
+#+NAME: 图 9
+#+CAPTION: 采用 sigmoid 作为激活函数,均值初始化的 4 层神经网络激活值分布(均值和方差).可以看到高层迅速进入饱和状态,在 100epoch 之后慢慢变成非饱和状态.
+[[file:assets/activation-sigmoid-4.png]]
+#+END_CENTER
+
+分析: $sigmoid(b+Wh)$ 由于结合均值随机初始化,在训练前期低层输入隐特征 h 变化可能和分类目标没有那么具有关联,所以 softmax 分类层更倾向于学习不同分类的偏置,而将 Wh 设置为 0.反向传播过程中,$\frac{\partial{L}}{\patial{h}}$ 更倾向为 0,在用 sigmoid 作为激活函数的时候,会使得激活函数陷入饱和状态,从而使得反向传播错误无法向前传播,从而使得低层网络层无法学习到有用信息.最终缓慢的,当低网络层学习到更为有用的信息后,高网络逃出饱和状态.整个网络层随着低网络层进入饱和状态而稳定.sigmoid 的网络一般性能都较差(即泛化能力不足).
+
+*** tanh 作为激活函数
+介于上述情况,由于高网络层激活值容易首先进入 0 值范围.那么采用以 0 为均值的对称激活函数可以规避陷入饱和状态.采用均值采样观察到了饱和状态出现在了第一层,然后依此传播到高层.
+
+-----
+#+BEGIN_CENTER
+#+NAME: 图 10
+#+CAPTION: 98 百分位数(标记)和标准差(实线+标记).可以看到第一层先进入饱和,然后第二层,第三层.
+[[file:assets/activation-tanh.png]]
+#+END_CENTER
+
+*** Softsign 作为激活函数
+Softsign 激活函数 $x/(1+|x|)$ 和 tanh 激活函数很相似.除了饱和状态为平滑渐进线(多项式饱和和指数).
+
+-----
+#+BEGIN_CENTER
+#+NAME: 图 11
+#+CAPTION: 98 百分位数(标记)和标准差(实线+标记).可以 softsign 作为激活函数时,所有层一起慢慢进入饱和状态.
+[[file:assets/activation-softsign.png]]
+#+END_CENTER
+
+
+并且 tanh 激活函数和 softsign 激活函数训练出的模型最后的激活值分布也是不同.tanh 的激活值分布在(-1,1)和 0 值附近.而 softsign 的激活值分布在 0 点和 0 点到(-1,1)之间的区域.
+-----
+#+BEGIN_CENTER
+#+NAME: 图 12
+#+CAPTION: (上图):为 tanh 作为激活函数的模型输出的激活值分布,可以看到低层激活值更多集中在-1 和 1 的饱和区域.(下图):为 softsign 的激活函数的模型输出的激活值分布,可以看到激活值大多数集中在(-0.6,-0.8)和(0.6,0.8)之间,没有饱和,并且是非线性区域.
+[[file:assets/activation-value-of-tanh-and-sfotsign.png]]
+#+END_CENTER
+
+*** 损失函数
+论文通过可视化一个单层隐层的网络,tanh 作为激活值,讨论了对数似然损失函数 $-\log{P(y|x)}$ 和 二次损失函数.下图显示二次损失函数具有更多的稳定平面.
+-----
+#+BEGIN_CENTER
+#+NAME: 图 13
+#+CAPTION: 黑色为交叉熵损失,红色为二次损失.
+[[file:assets/loss_function.png]]
+#+END_CENTER
+
+*** 初始化状态下的梯度
+通过观察初始化状态下的梯度传播过程,优化初始化策略对梯度传播效率.
+
+假设:全链接神经网络的激活函数为对称,并且在 0 点具有单位梯度(即 $f^{'}(0)=1$).记 $z^{i}$ 为 i 网络层的激活向量; $s^{i}$ 为 i 网络层的激活函数参数向量.所以, $s^{i}=z^{i}W^{i}+b^{i}$ 和 $z_{i+1}=f(s^{i})$,定义梯度为:
+\begin{equation}
+  \frac{\partial{Cost}}{\partial{s_{k}^{i}}} = f'(s_{k}^{i})W_{k}^{i+1}\frac{\partial{Cost}}{\partial{s^{i+1}}} \\
+  \frac{\partial{Cost}}{\partial{w_{l,k}^{i}}} = z_{l}^{i}\frac{\partial{Cost}}{\partial{s_{k}^{i}}}
+\notag
+\end{equation}
+
+激活值的方差可以表示为输入数据方差和初始权重的方差线性组合(由于激活值在 0 值附近,且梯度为 1,所以 f(x)=x):
+\begin{equation}
+  f'(s_{k}^{i}) = 1 \\
+  Var[z^{i}] = Var[x]\prod_{i'=0}^{i-1}n_{i'}Var[W^{i'}]
+\notag
+\end{equation}
+
+其中 $Var[W^{i'}]$ 为第 $i'$ 网络层的初始化权重共享的方差, $n^{i'}$ 为第 i^{i} 网络层的权重数量.对于一个具有 d 层的网络来说:
+\begin{aligned}
+  Var[\frac{\partial{Cost}}{\partial{s^{i}}}] &= Var[\frac{\partial{Cost}}{\partial{s^{d}}}]\prod_{i'=i}^{d}n_{i'+1}Var[W^{i'}] \\
+    Var\left[\frac{\partial{Cost}}{\partial{w^{i}}}\right] &= \prod_{i'=0}^{i-1}n_{i'}Var[W^{i'}]\prod_{i'=i}^{d-1}n_{i'+1}Var[W^{i'}] \\
+    & \times Var[x]Var[\frac{\partial{Cost}}{\partial{s^{d}}}]
+\notag
+\end{aligned}
+
+从向前传播角度看,希望激活值的方差不变,则: $\forall{(i,i')},Var[z^{i}]=Var[z^{i'}]$.
+
+从反向传播角度看,希望对于激活前的值方差不变: $\forall{(i,i')},Var[\frac{\partial{Cost}}{\partial{s^{i}}}]=Var[\frac{\partial{Cost}}{\partial{s^{i'}}}]$
+
+要满足上述两种约束,只需要:
+\begin{equation}
+  \forall{i}, n_{i}Var[W^{i}] = 1 \\
+  \forall{i}, n_{i+1}Var[W^{i}] = 1 
+  \notag
+\end{equation}
+
+结合起来就是: $\forall{i}, Var[W^{i}]=\frac{2}{n_{i}+n_{i+1}}$. 当所有网络层具有相同神经元则满足.
+
+结合均值随机初始化,提出 *Xvaier* 初始化方法:
+\begin{equation}
+  W \sim U\left[-\frac{\sqrt{6}}{\sqrt{n_{j}+n_{j+1}}},\frac{\sqrt{6}}{\sqrt{n_{j}+n_{j+1}}}\right]
+\notag
+\end{equation}
+
+
+*** 
 ** He 初始化
 
 * 激活函数
 
+激活函数主要是用来在深度神经网络中引入未线性变换,从而提高网络的拟合能力.激活函数在反向传播的时候,同时需要保证不要轻易出现饱和现象,从而使得梯度无法传播.
 
 ** tanh
 
-** softplus
+** softsign
 
 ** relu
 
