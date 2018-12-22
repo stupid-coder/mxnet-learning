@@ -21,6 +21,7 @@ parser.add_argument("--batch_size", help="train's batch size", type=int, default
 parser.add_argument("--num_epochs", help="train epochs number", type=int, default=10)
 parser.add_argument("--begin_epoch", help="begin epoch in this train process", type=int, default=1)
 parser.add_argument("--learning_rate", help="learning rate in this train process", type=float, default=0.1)
+parser.add_argument("--decay", help="learning rate decay", type=float, default=None)
 parser.add_argument("--restore_dir", help="from where directory to restore the model", type=str, default=None)
 parser.add_argument("--save_dir", help="to where directory to save the model's parameters and train test information", type=str)
 parser.add_argument('--gpu', help="which gpu to use", type=int, default=0)
@@ -162,6 +163,10 @@ def train(net, trainer, train_iter, test_iter, loss, options):
                 lr.append(circle_lr)
                 trainer.set_learning_rate(circle_lr)
                 epoch_count += 1
+            elif options.decay and i != 0 and i % options.step_size == 0:
+                lr = trainer.get_learning_rate() * options.decay
+                trainer.set_learning_rate(lr)
+
             trainer.step(1)
 
             if options.run_circle_test:
