@@ -150,6 +150,12 @@ def train(net, trainer, train_iter, test_iter, loss, options):
         begin_clock = time.clock()
 
         epoch_count = 0.0
+
+        if options.decay and i != 0 and i % options.step_size == 0:
+            lr = trainer.get_learning_rate() * options.decay
+            trainer.set_learning_rate(lr)
+
+
         for X, y in train_iter:
 
             X, y = X.as_in_context(ctx), y.as_in_context(ctx)
@@ -163,10 +169,6 @@ def train(net, trainer, train_iter, test_iter, loss, options):
                 lr.append(circle_lr)
                 trainer.set_learning_rate(circle_lr)
                 epoch_count += 1
-            elif options.decay and i != 0 and i % options.step_size == 0:
-                lr = trainer.get_learning_rate() * options.decay
-                trainer.set_learning_rate(lr)
-
             trainer.step(1)
 
             if options.run_circle_test:
