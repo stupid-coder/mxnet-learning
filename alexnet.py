@@ -31,6 +31,8 @@ def build_AlexNet(restore_dir):
     else:
         network.initialize(ctx=helper.ctx, init=init.Xavier())
 
+    return network
+
 def main():
     options = helper.parser.parse_args()
 
