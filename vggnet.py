@@ -25,9 +25,9 @@ def build_VGGNet(restore_dir):
     conv_arch = ((1,64), (1, 128), (2, 256), (2, 512), (2, 512))  # VGG11
 
     for (num_convs, num_channels) in conv_arch:
-        net.add(vgg_block(num_convs, num_channels))
+        network.add(vgg_block(num_convs, num_channels))
 
-    net.add(nn.Dense(4096, activation='relu'), nn.Dropout(0.5),
+    network.add(nn.Dense(4096, activation='relu'), nn.Dropout(0.5),
             nn.Dense(4096, activation='relu'), nn.Dropout(0.5),
             nn.Dense(10))
 
