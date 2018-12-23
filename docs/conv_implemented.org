@@ -541,10 +541,98 @@ AlexNet 的网络结构基本和 LeNet 的结构相似,不过也有一些显著�
 [[file:assets/AlexNet.png]]
 #+END_CENTER
 
+对应代码如下:
+#+BEGIN_SRC python
+  def build_AlexNet(restore_dir):
+      network = nn.Sequential()
+      network.add(
+          nn.Conv2D(96, kernel_size=11, strides=4, activation='relu'),
+          nn.MaxPool2D(pool_size=3, strides=2),
+          nn.Conv2D(256, kernel_size=5, padding=2, activation='relu'),
+          nn.MaxPool2D(pool_size=3, strides=2),
+          nn.Conv2D(384, kernel_size=3, padding=1, activation='relu'),
+          nn.Conv2D(384, kernel_size=3, padding=1, activation='relu'),
+          nn.Conv2D(256, kernel_size=3, padding=1, activation='relu'),
+          nn.MaxPool2D(pool_size=3, strides=2),
+          nn.Dense(4096, activation='relu'), nn.Dropout(0.5),
+          nn.Dense(4096, activation='relu'), nn.Dropout(0.5),
+          nn.Dense(10)
+      )
 
+      if restore_dir:
+          helper.restore(network, restore_dir)
+      else:
+          network.initialize(ctx=helper.ctx, init=init.Xavier())
 
+      return network
+#+END_SRC
+
+原始论文中说输入的图像为 224*224 的,但是其实如果输入为 227*227,整个网络结构和输出的特征图尺度就对了,结果如下:
+#+BEGIN_EXAMPLE
+INFO:helper:conv0 - output shape:(1L, 96L, 55L, 55L)
+INFO:helper:pool0 - output shape:(1L, 96L, 27L, 27L)
+INFO:helper:conv1 - output shape:(1L, 256L, 27L, 27L)
+INFO:helper:pool1 - output shape:(1L, 256L, 13L, 13L)
+INFO:helper:conv2 - output shape:(1L, 384L, 13L, 13L)
+INFO:helper:conv3 - output shape:(1L, 384L, 13L, 13L)
+INFO:helper:conv4 - output shape:(1L, 256L, 13L, 13L)
+INFO:helper:pool2 - output shape:(1L, 256L, 6L, 6L)
+INFO:helper:dense0 - output shape:(1L, 4096L)
+INFO:helper:dropout0 - output shape:(1L, 4096L)
+INFO:helper:dense1 - output shape:(1L, 4096L)
+INFO:helper:dropout1 - output shape:(1L, 4096L)
+INFO:helper:dense2 - output shape:(1L, 10L)
+#+END_EXAMPLE
+
+整个网络的参数量:
+| 网络层 | 参数量                    |
+| conv0  | 96*(11*11*3+1)=34944      |
+| conv1  | 256*(5*5*96+1)=614656     |
+| conv2  | 384*(3*3*256+1)=885120    |
+| conv3  | 384*(3*3*384+1)=1327488   |
+| conv4  | 256*(3*3*384+1)=884992    |
+| dense0 | 4096*(256*6*6+1)=37752832 |
+| dense1 | 4096*(4096+1)=16781312    |
+| dense2 | 10*(4096+1)=40970         |
+| total  | 58,322,314=58M            |
+
+*** 实验结果
+以 batch_size=256, learning_rate=0.1, xavier 作为初始化策略.结果如下:
+-----
+#+BEGIN_CENTER
+#+NAME: AlexNet 试验结果
+#+CAPTION: 实验参数:batch_size=256,learning_rate=0.1, xavier 初始化策略.
+[[file:assets/acc_loss/alexnet-xavier-01-1-101-93-acc-loss.png]]
+#+END_CENTER
+
+可以看到虽然采用了 dropout 方法来抑制过拟合,但是由于该网络结构是为了 ImageNet 这种大数据研发的,所以在 Fashion-MNIST 上还是过于复杂了.
+
+学习率还是应该再降低一些.后续可以做一下实验.
 
 ** VGGNet
+VGGNet 为 ImageNet 2014 年的冠军网络.VGGNet 的网络改进就是加深网络层数来增强网络的非线性拟合能力,并且重复使用小尺度卷积提取体征.
+
+*** 网络结构
+VGGNet 相对于 AlexNet 进行了如下的改动:
++ 通过堆叠多个小感受野的 3*3 卷积核来获取大感受野(例如 2 层 3*3 卷积层的感受野为 5,但是额外增加了非线性能力;并且 2 层 3*3 卷积层的参数数量只有 $2*(3^{2}C^{2})=18C^{2}$,5*5 卷积层参数数量为 $5*5C^{2}=25C^{2}$).并且卷积核的步长都是 1,增加填充 1,保证卷积的空间尺度不变.
++ 引入了 1*1 卷积核,来增加通道之间的非线性变换.
++ 只采用 2*2 采样尺度,步长为 2 的最大值采样层.
+
+
+-----
+#+BEGIN_CENTER
+#+NAME: VGGNet 网络结构
+#+CAPTION: VGGNet 网络结构,根据不同卷积配置总共有 6 种 VGGNet(A-E)
+[[file:assets/VGGNet.png]]
+#+END_CENTER
+
+可以看到只采用了 3*3 卷积层,每组卷积层(最大值采样层之间的卷积层)具有相同的通道数量.
+
+参数数量:
+| Network              | A,A-LRN |   B |   C |   D |   E |
+| Num of parameters(M) |     133 | 133 | 134 | 138 | 144 |
+
+
 
 ** Inception
 
