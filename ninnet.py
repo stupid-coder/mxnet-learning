@@ -52,7 +52,7 @@ def main():
 
     network = build_NiN(options.restore_dir)
 
-    helper.describe_net(network)
+    helper.describe_net(network, options.resize)
 
     trainer = gluon.Trainer(network.collect_params(), 'sgd', {'learning_rate': options.learning_rate})
 
