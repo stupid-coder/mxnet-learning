@@ -111,7 +111,6 @@ def plot_loss_and_acc(train_info, save_path):
     plt.legend()
     plt.title("accuracy")
 
-    plt.show()
     plt.savefig(os.path.join(save_path, "loss_acc.png"))
 
 

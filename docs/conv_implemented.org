@@ -362,7 +362,7 @@ Softsign 激活函数 $x/(1+|x|)$ 和 tanh 激活函数很相似.除了饱和状
 [[file:assets/loss_function.png]]
 #+END_CENTER
 
-*** 初始化状态下的梯度
+*** Xavier 初始化策略
 通过观察初始化状态下的梯度传播过程,优化初始化策略对梯度传播效率.
 
 假设:全链接神经网络的激活函数为对称,并且在 0 点具有单位梯度(即 $f^{'}(0)=1$).记 $z^{i}$ 为 i 网络层的激活向量; $s^{i}$ 为 i 网络层的激活函数参数向量.所以, $s^{i}=z^{i}W^{i}+b^{i}$ 和 $z_{i+1}=f(s^{i})$,定义梯度为:
@@ -406,24 +406,143 @@ Softsign 激活函数 $x/(1+|x|)$ 和 tanh 激活函数很相似.除了饱和状
 \notag
 \end{equation}
 
+*** 实验结果
 
-*** 
-** He 初始化
+LeNet 采用 sigmoid 作为激活函数,Xavier 作为初始化策略,学习率为 0.1,10 轮训练结果如下:
+-----
+#+BEGIN_CENTER
+#+CAPTION: 网络从 4 epoch 开始收敛(均值初始化网络需要 70 个 epoch 才开始收敛).测试集上准确性达到了 86%.
+[[file:assets/acc_loss/lenet-xavier-sigmoid-01-1-101-86-loss-acc.png]]
+#+END_CENTER
+
+
+LeNet 采用 tanh 作为激活函数,Xavier 作为初始化策略,学习率为 0.1,10 轮训练结果如下:
+-----
+#+BEGIN_CENTER
+#+CAPTION: 网络第一轮就开始开始收敛.最终模型在测试集上准确性达到了 89%,并有过拟合现象.
+[[file:assets/acc_loss/lenet-xavier-tanh-01-1-101-89-loss-acc.png]]
+#+END_CENTER
+
+
+** TODO He 初始化
 
 * 激活函数
 
-激活函数主要是用来在深度神经网络中引入未线性变换,从而提高网络的拟合能力.激活函数在反向传播的时候,同时需要保证不要轻易出现饱和现象,从而使得梯度无法传播.
+激活函数主要是用来在深度神经网络中引入未线性变换,从而提高网络的拟合能力.激活函数在反向传播的时候,同时需要保证不要轻易出现饱和现象,从而使得梯度无法传播.不同的激活函数在不同的网络结构中使用,使用的不得当会影响网络的性能和收敛性.
+
+** sigmoid
+激活函数公式:
+\begin{equation}
+  sigmoid(x) = \frac{1}{1+e^{-x}} 
+  \notag
+\end{equation}
+
+梯度公式:
+\begin{equation}
+  sigmoid'(x) = sigmoid(x)(1-sigmoid(x))
+\notag
+\end{equation}
+
+激活函数图像和对应的梯度图如下:
+-----
+#+BEGIN_CENTER
+#+CAPTION: sigmoid 的函数图像和梯度图像. 
+[[file:assets/activation/sigmoid.png]]
+#+END_CENTER
+
+经过 sigmoid 激活后的值都是大于 0 的,所以均值为正数.并且可以看到梯度最大值为 0.25,所以较为容易陷入饱和状态.一般只有在特殊时候使用,例如 LSTM 网络中的各个门.
 
 ** tanh
+激活函数公式:
+\begin{equation}
+  \tanh{(x)} = \frac{\sinh{(x)}}{\cosh{(x)})} = \frac{e^{x}-e^{-x}}{e^{x}+e^{-x}}
+  \notag
+\end{equation}
+
+梯度公式:
+\begin{equation}
+  \tanh'{(x)} = 1 - \tanh^{2}{(x)}
+\notag
+\end{equation}
+
+#+BEGIN_CENTER
+#+CAPTION: tanh 的函数图像和梯度图像.
+[[file:assets/activation/tanh.png]]
+#+END_CENTER
+
+对称的激活函数,均值为 0.优先在输入归一化的网络中.并且作为激活函数的网络收敛速度要快于 sigmoid 函数.同时看到 tanh 函数的不饱和区域很小[-2.5,+2.5],其他区域的梯度基本都接近 0 了.有时候可以通过添加一个较小的线性元素来避免这些平坦区域 $f(x)=tanh(x)+ax$.
+
 
 ** softsign
+激活函数公式:
+\begin{equation}
+  signsoft(x) = \frac{x}{1-|x|}
+  \notag
+\end{equation}
+
+梯度公式:
+\begin{equation}
+  signsoft'(x) = \frac{1}{(1+|x|)^{2}}
+\notag
+\end{equation}
+
+-----
+#+BEGIN_CENTER
+#+CAPTION: softsign 的函数图像和梯度图像.
+[[file:assets/activation/softsign.png]]
+#+END_CENTER
+
+可以看到激活函数的不饱和区域要比 tanh 要大,能够学习到更多信息.
 
 ** relu
+激活函数公式:
+\begin{equation}
+  relu(x) = max(0, x)
+  \notag
+\end{equation}
 
+梯度公式:
+\begin{equation}
+  relu'(x) = \begin{cases}
+    1 & x > 0 \\
+    0 & x < 0
+    \end{cases}
+  \notag
+\end{equation}
+
+-----
+#+BEGIN_CENTER
+#+CAPTION: relu 的函数图像和梯度图像.
+[[file:assets/activation/relu.png]]
+#+END_CENTER
+
+该激活函数计算更为简单,并且在大于 0 的区域,梯度为 1,保证反向传播时,误差可以传播.
 
 * 网络结构
+LeNet 之后最为成功的卷积神经网络是 AlexNet,该网络在 ImageNet2012 比赛上大放异彩,从而使得卷积神经网络又重新走入视野之中.
 
 ** AlexNet
+LeNet 提出后,卷积神经网络沉寂了很多.90 年代完全被支持向量机统治.主要原因是一方面,神经网络计算复杂,当时没有对应的 GPU 加速器,所以需要花费很久时间来训练一个现在看来并不大的神经网络.另一方面,当时也没有大量研究参数初始化和非凸优化等领域,导致复杂的神经网络也非常难以训练.
+
+在卷积神经网络出现之前,机器视觉主要依赖于具有大量相关经验的学者研究出的人工特征,例如(SIFT,HOG),然后将这些人工构造的特征喂给机器学习来进行学习.随着卷积神经网络的大范围应用,可以预见到的是卷积神经网络就像这些有经验的学者一样通过数据来学习对应的特征表达.一层一层,从而实现最终的分类任务.由于这些特征完全是与图像和任务有关,所以提取的特征表达效率和效果都要好于人工特征.
+
+*** 网络结构
+AlexNet 的网络结构基本和 LeNet 的结构相似,不过也有一些显著区别:
++ =AlexNet 采用更深的卷积神经网络= :: 包括 8 层变换,其中包括 5 层卷积层,2 层全链接隐含层以及 1 层全链接输出层.
++ =激活函数= :: 采用 relu 作为激活函数,在正区间 relu 梯度的恒等为 1.因此不会出现因为初始化不当,使得模型无法训练.
++ =dropout= :: 采用丢弃法来控制全链接层的复杂度.
++ =数据增强= :: 采用了大量的数据增强方法,扩大数据集,从而避免过拟合.
+
+
+-----
+#+BEGIN_CENTER
+#+NAME: AlexNet
+#+CAPTION: AlexNet 网络结构.输入为 224*224 的 3 通道图像,第一层为 11*11,步长为 4 的卷积层,跟着一个 3*3,步长为 2 的最大值采样层;第二层为 5*5,步长为 1 的卷积层,跟着一个 3*3,步长为 2 的最大值采样层;第三层为 3*3,步长为 1 的卷积层;第四层为 3*3,步长为 1 的卷积层;第五层为 3*3,步长为 1 的卷积层,然后跟着一个 3*3,步长为 2 的最大值采样层.随后是两层 4096 全链接隐含层.最后为 1000 路 softmax 层.
+[[file:assets/AlexNet.png]]
+#+END_CENTER
+
+
+
 
 ** VGGNet
 
@@ -439,7 +558,6 @@ Softsign 激活函数 $x/(1+|x|)$ 和 tanh 激活函数很相似.除了饱和状
 
 ** Adam
 
-
 * 归一化方法 
 
 * 正则化
@@ -447,7 +565,6 @@ Softsign 激活函数 $x/(1+|x|)$ 和 tanh 激活函数很相似.除了饱和状
 ** L1/L2
 
 ** Dropout
-
 
 
 * 数据增强
