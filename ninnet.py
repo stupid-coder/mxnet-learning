@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 helper.parser.add_argument("--activation", help="network's activation function", type=str, default='relu')
 
-def build_nin(restore_dir):
+def build_NiN(restore_dir):
 
     def nin_block(num_channels, kernel_size, strides, padding):
         blk = nn.Sequential()
@@ -50,7 +50,7 @@ def main():
 
     helper.ctx = helper.trygpu(options.gpu)
 
-    network = build_LeNet(options.restore_dir)
+    network = build_NiN(options.restore_dir)
 
     helper.describe_net(network)
 
