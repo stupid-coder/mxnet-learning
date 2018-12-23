@@ -17,6 +17,7 @@ import math
 __all__ = ['dataset', 'accuracy', 'evaluate', 'train', 'run', 'describe_net', 'plot_loss_and_acc', 'trygpu', 'parser', 'ctx', 'restore']
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--resize", help="resize the input image", type=int, default=None)
 parser.add_argument("--batch_size", help="train's batch size", type=int, default=256)
 parser.add_argument("--num_epochs", help="train epochs number", type=int, default=10)
 parser.add_argument("--begin_epoch", help="begin epoch in this train process", type=int, default=1)
@@ -59,12 +60,16 @@ def get_labels(labels):
 def data():
     return gdata.vision.FashionMNIST(train=True), gdata.vision.FashionMNIST(train=False)
 
-def dataset(batch_size):
+def dataset(batch_size, resize=None):
     train_data, test_data = data()
 
-    transformer = gdata.vision.transforms.Compose([
-        gdata.vision.transforms.ToTensor()
-        ])
+    transformer = []
+    if resize:
+        transformer += [gdata.vision.transforms.Resize(resize)]
+
+
+    transformer += [gdata.vision.transforms.ToTensor()]
+    transformer = gdata.vision.transforms.Compose(transformer)
 
     train_iter = gdata.DataLoader(train_data.transform_first(transformer),
                                   batch_size=batch_size, shuffle=True,
@@ -127,9 +132,12 @@ def evaluate(data_iter, net, loss_fn):
         loss += loss_fn(y_hat, y).mean().asscalar()
     return loss.asscalar() / len(data_iter), acc.asscalar() / len(data_iter)
 
-def describe_net(net):
+def describe_net(net, size=None):
     logger.info("ctx:{}".format(ctx))
-    X = nd.random.uniform(shape=(1, 1, 28, 28), ctx=ctx)
+    if size:
+        X = nd.random.uniform(shape=(1, 1, size, size), ctx=ctx)
+    else:
+        X = nd.random.uniform(shape=(1, 1, 28, 28), ctx=ctx)
     logger.info("network architecture")
     for layer in net:
         X = layer(X)
@@ -244,7 +252,7 @@ def save(network, restore_dir, save_dir, train_loss, train_acc, test_loss, test_
 
 def run_train(network, trainer, loss_fn, options):
 
-    train_iter, test_iter = dataset(options.batch_size)
+    train_iter, test_iter = dataset(options.batch_size, options.resize)
 
     train_loss, train_acc, test_loss, test_acc = train(network, trainer, train_iter, test_iter, loss_fn, options)
 
@@ -299,7 +307,8 @@ def save_lr_min_max(loss, acc, lr, save_dir):
     json.dump(info, open(os.path.join(save_dir, _LR_MIN_MAX), 'w'))
 
 def run_lr_min_max(network, trainer, loss_fn, options):
-    train_iter, test_iter = dataset(options.batch_size)
+
+    train_iter, test_iter = dataset(options.batch_size, options.resize)
 
     trainer = gluon.Trainer(network.collect_params(), 'sgd', {'learning_rate':0})
 
