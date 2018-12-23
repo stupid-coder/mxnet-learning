@@ -29,7 +29,7 @@ def build_AlexNet(restore_dir):
     if restore_dir:
         helper.restore(network, restore_dir)
     else:
-        network.initialize(ctx=helper.ctx)
+        network.initialize(ctx=helper.ctx, init=init.Xavier())
 
 def main():
     options = helper.parser.parse_args()
