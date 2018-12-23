@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def build_AlexNet(restore_dir):
     network = nn.Sequential()
-    network.add([
+    network.add(
         nn.Conv2D(96, kernel_size=11, strides=4, activation='relu'),
         nn.MaxPool2D(pool_size=3, strides=2),
         nn.Conv2D(256, kernel_size=5, padding=2, activation='relu'),
@@ -24,7 +24,7 @@ def build_AlexNet(restore_dir):
         nn.Dense(4096, activation='relu'), nn.Dropout(0.5),
         nn.Dense(4096, activation='relu'), nn.Dropout(0.5),
         nn.Dense(10)
-    ])
+    )
 
     if restore_dir:
         helper.restore(network, restore_dir)
