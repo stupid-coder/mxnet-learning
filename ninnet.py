@@ -20,7 +20,7 @@ def build_NiN(restore_dir):
         blk.add(nn.Conv2D(num_channels, kernel_size,
                           strides, padding, activation='relu'),
                 nn.Conv2D(num_channels, kernel_size=1, activation='relu'),
-                nn.Conv2D(num_chanenls, kernel_size=1, activation='relu'))
+                nn.Conv2D(num_channels, kernel_size=1, activation='relu'))
         return blk
 
     network = nn.Sequential()
