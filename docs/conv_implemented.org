@@ -724,6 +724,7 @@ NiN 网络的卷积层感受野和 AlexNet 前 3 层一致.对应代码如下:
 *** 实验结果
 
 
+** Inception
 ** ResNet
 
 ** DenseNet
