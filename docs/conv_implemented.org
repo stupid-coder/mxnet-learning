@@ -722,9 +722,123 @@ NiN 网络的卷积层感受野和 AlexNet 前 3 层一致.对应代码如下:
 #+END_SRC
 
 *** 实验结果
+NiN 一般需要选取较大的学习率,但是为了对比,所以还是沿用 0.01.结果如下:
+-----
+#+BEGIN_CENTER
+#+NAME: NiN 实验结果
+#+CAPTION: NiN 学习率 0.01, 5 轮训练结果.
+[[file:assets/acc_loss/nin-xavier-1-5-61-acc-loss.png]]
+#+END_CENTER
+
+看起来效果要比 VGG 差很多,应该使用更大的学习率.
+
+** GoogLeNet
+和 VGG 同年出现的 GoogLeNet[fn:7]在 ImageNet 2014 年比赛中获得了冠军网络,虽然从名字上向 LeNet 致敬,但是和 LeNet 网络完全不同.本且 GoogLeNet 具有很多版本,这里只按照和 mxnet 教程一样的,介绍第一个版本.
+
+*** Inception 
+GoogLeNet 中的基础卷积块为 Inception 块.该卷积块要比 NiN 更为复杂.
+
+-----
+#+BEGIN_CENTER
+#+NAME: inception-block
+#+CAPTION: (A)为 inception 块的基础版本;(B)加上通道降低的 inception.
+[[file:assets/inception.png]]
+#+END_CENTER
+
+从上图可以看到一个 inception 模块具有四条并行线路.前三条为 1*1,3*3,5*5 卷积层来处理不同尺度的特征.3*3 和 5*5 的卷积执行之前有 1*1 卷积用来减少通道数量,从而减低模型的复杂度.第四条线路采用 3*3 最大池化层,后接 1*1 卷积层来增加通道间信息交互.其中这四条路线都采用对应的填充来保证输入和输出的空间维度(高宽)一致,最后将结果在通道维度上进行拼接输出.
+
+对应的代码实现:
+#+BEGIN_SRC python
+  class Inception(nn.Block):
+      def __init__(self, c1, c2, c3, c4, **kwargs):
+          super(Inception, self).__init__(**kwargs)
+
+          self.p1_1 = nn.Conv2D(c1, kernel_size=1, activation='relu')
+
+          self.p2_1 = nn.Conv2D(c2[0], kernel_size=1, activation='relu')
+          self.p2_2 = nn.Conv2D(c2[1], kernel_size=3, padding=1, activation='relu')
+
+          self.p3_1 = nn.Conv2D(c3[0], kernel_size=1, activation='relu')
+          self.p3_2 = nn.Conv2D(c3[1], kernel_size=5, padding=2, activation='relu')
+
+          self.p4_1 = nn.MaxPool2D(pool_size=3, strides=1, padding=1)
+          self.p4_2 = nn.Conv2D(c4[0], kernel_size=1, activation='relu')
 
 
-** Inception
+      def forward(self, x):
+          p1 = self.p1_1(x)
+          p2 = self.p2_2(self.p2_1(x))
+          p3 = self.p3_2(self.p3_1(x))
+          p4 = self.p4_2(self.p4_1(x))
+          return nd.concat(p1, p2, p3, p4, dim=1)
+#+END_SRC
+
+*** 网络结构
+GoogLeNet 和 VGG 的整体结构类似,主体卷积部分为 5 个模块组成,每个模块之间由步长为 2 的,3*3 最大值采样来减少空间维度.
+
++ =第一个卷积模块= :: 和 ZFNet 类似,首先采用 7*7,步长为 2 的卷积层在原始输入空间提取空间尺度较大的特征,然后接着最大值采样,降低整个模型的空间尺度.
+               #+BEGIN_SRC python
+                 def block1():
+                         b = nn.Sequential()
+                         b.add( nn.Conv2D(64, kernel_size=7, strides=2, padding=3, activation='relu'),
+                                nn.MaxPool2D(pool_size=3, strides=2, padding=1))
+                         return b
+               #+END_SRC
++ =第二个卷积模块= :: 首先 1*1 卷积核进行通道间变换,然后执行扩大 3 倍通道数的 3*3 卷积操作.
+               #+BEGIN_SRC python
+                 def block2():
+                         b = nn.Sequential()
+                         b.add( nn.Conv2D(64, kernel_size=1, activation='relu'),
+                                nn.Conv2D(192, kernel_size=3, padding=1),
+                                nn.MaxPool2D(pool_size=3, strides=2, padding=1))
+                         return b
+               #+END_SRC
++ =第三个卷积模块= :: 由两个 inception 模块构成.第一个 inception 模块的输出通道数为 64+128+32+32=256,四条路线的通道数比例为 2:4:1:1.第二条和第三条线路会先对输入的通道数进行压缩 96/192=1/2 和 16/192=1/12.第二层 inception 模块输出通道增到 128+192+96+64=480,每条线路的输出通道数比例为:128:192:96:64=4:6:3:2.第二条和第三条线路分别对输入通道数减少到 128/256=1/2 和 32/256=1/8.
+               #+BEGIN_SRC python
+                     def block3():
+                         b = nn.Sequential()
+                         b.add( Inception(64, (96, 128), (16, 32), 32),
+                                Inception(128, (128, 192), (32, 96), 64),
+                                nn.MaxPool2D(pool_size=3, strides=2, padding=1))
+                         return b
+               #+END_SRC
++ =第四个卷积模块= :: 由五个 inception 模块构成.输出通道数分别为 192+208+48+64=512, 160+224+64+64=512, 128+256+64+64=512, 112+288+64+64=528 和 256+320+128+128=832.各个模块中通道数压缩比例都不同.
+               #+BEGIN_SRC python
+                 def block4():
+                         b = nn.Sequential()
+                         b.add( Inception(192, (96, 208), (16, 48), 64),
+                                Inception(160, (112, 224), (24, 64), 64),
+                                Inception(128, (128, 256), (24, 64), 64),
+                                Inception(112, (144, 288), (32, 64), 64),
+                                Inception(256, (160, 320), (32, 128), 128),
+                                nn.MaxPool2D(pool_size=3, strides=2, padding=1))
+                         return b
+               #+END_SRC
++ =第五个卷积模块= :: 由两个 inception 模块构成.输出通道数为 256+320+128+128=832 和 384+384+128+128=1024.
+               #+BEGIN_SRC python
+                 def block5():
+                     b = nn.Sequential()
+                     b.add( Inception(256, (160, 320), (32, 128), 128),
+                            Inception(384, (192, 384), (48, 128), 128),
+                            nn.GlobalAvgPool2D())
+                     return b
+               #+END_SRC
++ =输出层= :: 全局均值层之后跟着全链接层来进行分类.因为全局均值采样层存在,所有任意尺度的图像最后都具有相同的通道数,所以整个网络层都可以处理任意尺度的图像.
+           #+BEGIN_SRC python
+             network = nn.Sequential()
+
+             network.add(
+                 block1(),
+                 block2(),
+                 block3(),
+                 block4(),
+                 block5(),
+                 nn.Dense(10))
+           #+END_SRC
+
+*** 实验结果
+由于整个 GoogLeNet 计算较为复杂,所以训练采用的图像为 96*96 即可.
+
 ** ResNet
 
 ** DenseNet
@@ -751,6 +865,8 @@ NiN 网络的卷积层感受野和 AlexNet 前 3 层一致.对应代码如下:
 * 模型压缩&剪枝
 
 * Footnotes
+
+[fn:7] Going deeper with convolutions
 
 [fn:6] https://arxiv.org/abs/1312.4400
 
