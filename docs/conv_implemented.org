@@ -854,11 +854,86 @@ GoogLeNet 和 VGG 的整体结构类似,主体卷积部分为 5 个模块组成,
 #+END_CENTER
 
 ** ResNet
+何恺明大神在 2015 年提出了残差网络(ResNet)[fn:9],主要是通过添加夸层链接,使得网络来拟合更容易拟合的残差来增加网络的深度.从反向传播的角度来看,添加的夸层链接给予了反向传播算法一个夸层的梯度反向传播路径,从而使得梯度能够传播的更深.
 
+*** 残差层
+假设输入的为 x,我们需要学习的函数映射为 $f(x)$,那么残差块只需要拟合出残差映射 $f(x)-x$.并且残差映射实际上更容易优化.下图就是 ResNet 中的基础块,即残差块(/residual block/).
+-----
+#+BEGIN_CENTER
+#+NAME: residual-block
+#+CAPTION: 残差块.一是输入数据可以夸层跳跃,残差更容易拟合,其次反向传播的梯度也可以通过夸层链接快速传递.
+[[file:assets/residual-block.png]]
+#+END_CENTER
+
+ResNet 和 VGGNet 一样,全部使用 3*3 卷积层设计.残差块中首先有两个同样输出通道数的 3*3 卷积层.每个卷积层后接一个批量归一化层和 ReLU 激活函数.然后将输入跳过这两个卷积层直接加在最后的 ReLU 激活函数之前.这样需要两个卷积层的输出和输入形状一样.如果想改变通道数,可以通过额外的 1*1 卷积层来将输入变换成需要的形状.
+
+具体实现如下:
+#+BEGIN_SRC python
+  class Residual(nn.Block):
+      def __init__(self, num_channels, use_1x1conv=False, strides=1, **kwargs):
+          super(Residual, self).__init__(**kwargs)
+          self.conv1 = nn.Conv2D(num_channels, kernel_size=3, padding=1, strides=strides)
+          self.conv2 = nn.Conv2D(num_channels, kernel_size=3, padding=1)
+
+          if use_1x1conv:
+              self.conv3 = nn.Conv2D(num_channels, kernel_size=1, strides=strides)
+          else:
+              self.conv3 = None
+
+          self.bn1 = nn.BatchNorm()
+          self.bn2 = nn.BatchNorm()
+
+      def forward(self, X):
+          Y = nd.relu(self.bn1(self.conv1(X)))
+          Y = self.bn2(self.conv2(Y))
+          if self.conv3:
+              X = self.conv3(X)
+          return nd.relu(Y+X)
+#+END_SRC
+
+*** 网络结构
+ResNet 的前两层和 GoogLeNet 一样:在输出的通道数为 64 的,步长为 2 的 7*7 卷积层之后跟着步长为 2 的 3*3 最大值采样层.不同之处在于 ResNet 每个卷积层后增加批量归一化层.
+
+GoogLeNet 之后跟着 4 个由多个 Inception 组成的模块.ResNet 则使用 4 个由残差块组成的模块,每个模块使用若干个同样输出通道数的残差块.由于之前已经采用了步长为 2 的最大值采样,所以第一个模块的通道数和输入通道数一致,无需减少高和宽.之后的模块在第一个残差块里将上一模块的通道数翻倍,并减半高和宽.
+
+#+BEGIN_SRC python
+  def build_resnet(restore_dir):
+
+      def resnet_block(num_channels, num_residuals, first_block=False):
+          blk = nn.Sequential()
+          for i in range(num_residuals):
+              if i == 0 and not first_block:
+                  blk.add(Residual(num_channels, use_1x1conv=True, strides=2))
+              else:
+                  blk.add(Residual(num_channels))
+          return blk
+
+      network = nn.Sequential()
+      network.add(
+          nn.Conv2D(64, kernel_size=7, strides=2, padding=3),
+          nn.BatchNorm(), nn.Activation('relu'),
+          nn.MaxPool2D(pool_size=3, strides=2, padding=1)
+      )
+
+      network.add(
+          resnet_block(64, 2, first_block=True),
+          resnet_block(128, 2),
+          resnet_block(256, 2),
+          resnet_block(512, 2))
+
+      network.add(nn.GlobalAvgPool2D(), nn.Dense(10))
+
+      if restore_dir:
+          helper.restore(network, restore_dir)
+      else:
+          network.initialize(ctx=helper.ctx, init=init.Xavier())
+
+      return network
+#+END_SRC
 ** DenseNet
 
-** MobileNet
 
+** MobileNet
 * 优化算法
 
 ** Adam
@@ -965,7 +1040,43 @@ GoogLeNet 和 VGG 的整体结构类似,主体卷积部分为 5 个模块组成,
 *** 实验结果
 在 LeNet 网络结构上进行批量归一化实验.
 
+对应网络结构:
+#+BEGIN_SRC python 
+  def build_LeNet(restore_dir, activation):
+      network = nn.Sequential()
+      network.add(
+          nn.Conv2D(channels=6, kernel_size=5, strides=1),
+          BatchNorm(6, num_dims=4),
+          nn.Activation('sigmoid'),
+          nn.MaxPool2D(pool_size=2, strides=2),
+          nn.Conv2D(channels=16, kernel_size=5),
+          BatchNorm(16, num_dims=4),
+          nn.Activation('sigmoid'),
+          nn.MaxPool2D(pool_size=2, strides=2),
+          nn.Dense(120, activation=activation),
+          BatchNorm(120, num_dims=2),
+          nn.Activation('sigmoid'),
+          nn.Dense(84, activation=activation),
+          BatchNorm(84, num_dims=2),
+          nn.Activation('sigmoid'),
+          nn.Dense(10)
+      )
 
+      if restore_dir:
+          helper.restore(network, restore_dir)
+      else:
+          network.initialize(init=init.Xavier(), ctx=helper.ctx)
+
+      return network
+#+END_SRC
+
+训练结果:
+-----
+#+BEGIN_CENTER
+#+NAME: lenet batchnorm 
+#+CAPTION: 学习率为 0.1,批次大小设置为 256.10 轮训练的结果,最终在测试集上准确性为 86%.
+[[file:assets/acc_loss/lenet-batchnorm-01-1-10-86-loss-acc.png]]
+#+END_CENTER
 
 * 正则化
 
@@ -980,6 +1091,8 @@ GoogLeNet 和 VGG 的整体结构类似,主体卷积部分为 5 个模块组成,
 * 模型压缩&剪枝
 
 * Footnotes
+
+[fn:9] Deep residual learning for image recognition
 
 [fn:8] Batch normalization: Accelerating deep network training by reducing internal covariate shift
 
