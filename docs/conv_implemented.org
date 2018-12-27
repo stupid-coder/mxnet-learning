@@ -836,8 +836,22 @@ GoogLeNet 和 VGG 的整体结构类似,主体卷积部分为 5 个模块组成,
                  nn.Dense(10))
            #+END_SRC
 
+
+-----
+#+BEGIN_CENTER
+#+NAME: GoogleNet 网络结构
+[[file:assets/GoogleNet-Arch.png]]
+#+END_CENTER
+
 *** 实验结果
-由于整个 GoogLeNet 计算较为复杂,所以训练采用的图像为 96*96 即可.
+由于整个 GoogLeNet 计算较为复杂,所以训练采用的图像为 96*96.学习率设置为 0.1.
+
+-----
+#+BEGIN_CENTER
+#+NAME: GoogLeNet 实验结果
+#+CAPTION: 学习率设置为 0.1,输入图像为 96*96.
+[[file:assets/acc_loss/googlenet-xavier-01-1-5-86-acc-loss.png]]
+#+END_CENTER
 
 ** ResNet
 
@@ -850,13 +864,114 @@ GoogLeNet 和 VGG 的整体结构类似,主体卷积部分为 5 个模块组成,
 ** Adam
 
 * 归一化方法 
+有很多归一化方法,主要可以分为两种:
++ 对输入数据进行归一化
++ 在神经网络计算过程中网络中的激活值归一化
+
+
+通常来说,对输入数据进行归一化有利于训练浅层模型.但是由于深度模型训练过程中,越靠近输出层的激活值越会出现剧烈震荡.所以对于深度模型即使输入数据已经归一化,但是网络中的激活值震荡通常会增加深度模型的训练.
+
+所以,在神经网络计算过程中对于网络中的激活值进行归一化操作是非常有效的方法.批量归一化[fn:8]就是这种归一化方法.在模型训练的过程中,批量归一化主要是计算一个小批量上的激活值的均值和标准差来对中间激活值进行归一化操作,从而使得整个网络模型的各层的输出值更为稳定.从而使得深度模型可以得到训练或者加速训练.
+
+** Batch Normalization
+批量归一化操作在对卷积层和全链接层的操作略有不同.
+
+*** 全链接层批量归一化
+通常,批量归一化操作是在全链接层中的仿射变换和激活函数之间.设全链接层的输入为 $\mu$, 权重参数和偏差参数为 W 和 b,激活函数为 $\phi$.设批量归一化操作为 $BN$.那么,使用批量归一化的全链接层的输出为: 
+\begin{equation}
+  \phi{(BN(W\mu+b))}
+\notag
+\end{equation}
+
+假设,仿射变换输出为 m 个样本的小批量 $\mathcal{B}={{x^{1},,...x^{m}}}$.这些是批量归一化的输入数据.对于批量 $\mathcal{B}$ 中的任意样本 $x^{i} \in R^{d}, 1 \leq i \leq m$,批量归一化层的输出同样为 d 维向量:
+\begin{equation}
+  y^{i} = BN(x^{i})
+\notag
+\end{equation}
+
+批量归一化步骤如下:
++ =计算批量样本的均值和方差= ::
+                    \begin{equation}
+                      \mu_{\mathcal{B}} \gets \frac{1}{m}\sum_{i=1}^{m}x^{i}, \\
+                      \sigma_{\mathcal{B}}^{2} \gets \frac{1}{m}\sum_{i=1}^{m}(x^{i}-\mu_{\mathcal{B}})^{2},
+                    \notag
+                    \end{equation}
++ =逐元素标准化= ::
+              \begin{equation}
+                \hat{x}^{i} \gets \frac{x^{i}-\mu_{\mathcal{B}}}{\sqrt{\sigma_{\mathcal{B}}^{2}+\epsilon}}
+  
+              \notag
+              \end{equation}
+              其中, $\epsilon>0$ 为一个很小的常数,从而保证分母是大于 0 .
++ =逐元素仿射变换= :: 经过上述标准化后,又引入两个可学习参数,用来对标准化值进行仿射变换.
+               \begin{equation}
+                 y^{i} \gets \gamma \bigodot \hat{x}^{i} + \beta.
+               \notag
+               \end{equation}
+               这两个参数是可学习的,如果批量归一化没有用,那么理论上模型只需要学习出 $\beta = \sqrt{\sigma_{\mathcal{B}}^{2}+\epsilon}$ 和 $\beta = \mu_{\mathcal{B}}$ 就可以抵消批量归一化操作.
+
+*** 卷积层批量归一化
+对于卷积操作来说,批量归一化操作是在卷积计算之后,激活函数之前执行.如果卷积计算输出多个通道,则需要对这些通道分别作批量归一化操作,且每个通道独立拥有仿射变换参数,且为标量.假设 m 个样本,在单个通道上,如果卷积计算输出的高和宽分别为 p 和 q.则需要对该通道中的 m*p*q 个元素同时作批量归一化.这些元素共同参与均值和方差的计算.
+
+*** 预测时批量归一化
+使用批量归一化训练时,可以将批量的大小设的大一些,从而使得批量内的样本的均值和方差的计算更为准确.将训练好的模型拿来预测的时候,希望单个样本的输出不应该取决于批量归一化所需要的随机小批量的均值和方差,一个常见的做法是通过衰减累加的形式估算整个训练集的样本均值和方差,并在预测时候使用这些值来获得稳定输出.
+
+#+BEGIN_SRC python
+  def batch_norm(X, gamma, beta, moving_mean, moving_var, eps, momentum):
+
+      if not autograd.is_training():  # 判断是否是预测模型
+          X_hat = (X - moving_mean) / nd.sqrt(moving_var+eps)
+      else:
+          assert len(X.shape) in (2, 4)
+          if len(X.shape) == 2:   # 全链接层
+              mean = X.mean(axis=0)
+              var = ((X-mean)**2).mean(axis=0)
+          else:                   # 卷积
+              mean = X.mean(axis=(0, 2, 3), keepdims=True)
+              var = ((X-mean)**2).mean(axis=(0, 2, 3), keepdims=True)
+          # 训练模式下,使用批量均值和方差执行标准化
+          X_hat = (X-mean)/nd.sqrt(var + eps)
+          # 更新均值和方差
+          moving_mean = momentum * moving_mean + (1 - momentum) * mean
+          moving_var = momentum * moving_var + (1 - momentum) * var
+
+      Y = gamma * X_hat + beta
+      return Y, moving_mean, moving_var
+#+END_SRC
+
+需要重载一个 Block 对象,保存均值和方差信息.
+#+BEGIN_SRC python
+  class BatchNorm(nn.Block):
+      def __init__(self, num_features, num_dims, **kwargs):
+          super(BatchNorm, self).__init__(**kwargs)
+          if num_dims == 2:
+              shape = (1, num_features)
+          else:
+              shape = (1, num_features, 1, 1)
+          self.gamma = self.params.get("gamma", shape=shape, init=init.One())
+          self.beta = self.params.get("beta", shape=shape, init=init.Zero())
+          self.moving_mean = nd.zeros(shape)
+          self.moving_var = nd.zeros(shape)
+
+      def forward(self, X):
+          if self.moving_mean.context != X.context:
+              self.moving_mean = self.moving_mean.copyto(X.context)
+              self.moving_var = self.moving_var.copyto(X.context)
+          Y, self.moving_mean, self.moving_var = batch_norm(X, self.gamma.data(), self.beta.data(), self.moving_mean, self.moving_var,
+                                                            eps=1e-5, momentum=0.9)
+          return Y
+#+END_SRC
+
+*** 实验结果
+在 LeNet 网络结构上进行批量归一化实验.
+
+
 
 * 正则化
 
 ** L1/L2
 
 ** Dropout
-
 
 * 数据增强
 
@@ -865,6 +980,8 @@ GoogLeNet 和 VGG 的整体结构类似,主体卷积部分为 5 个模块组成,
 * 模型压缩&剪枝
 
 * Footnotes
+
+[fn:8] Batch normalization: Accelerating deep network training by reducing internal covariate shift
 
 [fn:7] Going deeper with convolutions
 
