@@ -854,7 +854,7 @@ GoogLeNet 和 VGG 的整体结构类似,主体卷积部分为 5 个模块组成,
 #+END_CENTER
 
 ** ResNet
-何恺明大神在 2015 年提出了残差网络(ResNet)[fn:9],主要是通过添加夸层链接,使得网络来拟合更容易拟合的残差来增加网络的深度.从反向传播的角度来看,添加的夸层链接给予了反向传播算法一个夸层的梯度反向传播路径,从而使得梯度能够传播的更深.
+何恺明大神在 2015 年提出了残差网络(ResNet)[fn:9][fn:10],主要是通过添加夸层链接,使得网络来拟合更容易拟合的残差来增加网络的深度.从反向传播的角度来看,添加的夸层链接给予了反向传播算法一个夸层的梯度反向传播路径,从而使得梯度能够传播的更深.
 
 *** 残差层
 假设输入的为 x,我们需要学习的函数映射为 $f(x)$,那么残差块只需要拟合出残差映射 $f(x)-x$.并且残差映射实际上更容易优化.下图就是 ResNet 中的基础块,即残差块(/residual block/).
@@ -930,8 +930,96 @@ GoogLeNet 之后跟着 4 个由多个 Inception 组成的模块.ResNet 则使用
 
       return network
 #+END_SRC
-** DenseNet
 
+*** 实验结果
+由于上述的网络结构正好可以处理 28*28 尺度的图像,所以采用最原始 fashion-MNIST 进行训练.
+
+-----
+#+BEGIN_CENTER
+#+NAME: resnet 实验结果
+#+CAPTION: 输入图像为 28*28 尺度,学习率为 0.1,训练 10 轮.最终在测试集上准确性为 86%.
+[[file:assets/acc_loss/resnet-01-1-10-86-loss-acc.png]]
+#+END_CENTER
+
+** DenseNet
+DenseNet[fn:11]为 ResNet 引申的一种变种.与 ResNet 的主要区别为:ResNet 为逐元素加,DenseNet 为按通道连接,所以叫做稠密链接.
+
+DenseNet 主要构建模块由稠密块(/dense block/)和过渡层(/transition layer/)组成.前者用来定义输入和输出如何连接,后者用来控制通道数,使通道数不会过大.
+
+*** 稠密块
+DenseNet 使用 ResNet 改良版的"批量归一化,激活和卷积"结构[fn:10],一个稠密块由多个具有相同输出通道的该结构组成,并将输入数据和输出在通道维度上进行连接,对应实现如下:
+#+BEGIN_SRC python
+  def conv_block(num_channels):
+      blk = nn.Sequential()
+      blk.add(nn.BatchNorm(), nn.Activation('relu'),
+              nn.Conv2D(num_channels, kernel_size=3, padding=1))
+      return blk
+
+  class DenseBlock(nn.Block):
+      def __init__(self, num_convs, num_channels, **kwargs):
+          super(DenseBlock ,self).__init__(**kwargs)
+          self.net = nn.Sequential()
+          for _ in range(num_convs):
+              self.net.add(conv_block(num_channels))
+
+      def forward(self, X):
+          for blk in self.net:
+              Y = blk(X)
+              X = nd.concat(X, Y, dim=1)
+          return X
+#+END_SRC
+
+可以看到稠密块的卷积通道数为增加的通道数,因此有时候也叫增长率.
+
+*** 过渡层
+正是由于每个稠密模块都会带来数据在通道数上的增加,所以多个稠密模块堆叠使用会带来过于复杂的模型.所以需要引入过渡层来控制模型的复杂度.主要是通过 1*1 卷积层来减少通道数量,并使用步长为 2 的均值采样层来降低数据空间尺度,从而进一步降低模型复杂度.
+
+对应实现如下:
+#+BEGIN_SRC python
+  def transition_block(num_channels):
+      blk = nn.Sequential()
+      blk.add(nn.BatchNorm(), nn.Activation('relu'),
+              nn.Conv2D(num_channels, kernel_size=1),
+              nn.AvgPool2D(pool_size=2, strides=2))
+      return blk
+#+END_SRC
+
+
+*** 网络结构
+DenseNet 和 ResNet 一样,首先采用单个大卷积和最大采样层.然后跟着 4 个稠密块.每个稠密块具有 4 个卷积层,通道增长率设置为 32,所以每个稠密块增加 128 个通道.
+
+对应网络结构实现如下:
+#+BEGIN_SRC python
+  def build(restore_dir):
+
+      network = nn.Sequential()
+
+      network.add(
+          nn.Conv2D(64, kernel_size=7, strides=2, padding=3),
+          nn.BatchNorm(), nn.Activation('relu'),
+          nn.MaxPool2D(pool_size=3, strides=2, padding=1)
+      )
+
+      num_channels, growth_rate = 64, 32
+      num_convs_in_dense_blocks = [4, 4, 4, 4]
+
+      for i, num_convs in enumerate(num_convs_in_dense_blocks):
+          network.add(DenseBlock(num_convs, growth_rate))
+          num_channels += num_convs * growth_rate
+          if i != len(num_convs_in_dense_blocks) - 1:
+              network.add(transition_block(num_channels // 2))
+
+      network.add(nn.GlobalAvgPool2D(), nn.Dense(10))
+
+      if restore_dir:
+          helper.restore(network, restore_dir)
+      else:
+          network.initialize(ctx=helper.ctx, init=init.Xavier())
+
+      return network
+#+END_SRC
+
+*** 实验结果
 
 ** MobileNet
 * 优化算法
@@ -1091,6 +1179,10 @@ GoogLeNet 之后跟着 4 个由多个 Inception 组成的模块.ResNet 则使用
 * 模型压缩&剪枝
 
 * Footnotes
+
+[fn:11] Densely connected convolutional networks
+
+[fn:10] Identity mappings in deep residual networks
 
 [fn:9] Deep residual learning for image recognition
 
