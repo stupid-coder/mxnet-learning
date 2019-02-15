@@ -1019,12 +1019,266 @@ DenseNet 和 ResNet 一样,首先采用单个大卷积和最大采样层.然后�
       return network
 #+END_SRC
 
-*** 实验结果
+p*** 实验结果
+DenseNet 输入数据为 96*96 的图像,学习率设置为 0.1,训练 10 轮,结果如下:
+-----
+#+BEGIN_CENTER
+#+NAME: DenseNet 实验结果
+#+CAPTION: DenseNet 学习率设置为 0.1,训练 10 轮,最终在测试集上准确性为 92%.
+[[file:assets/acc_loss/dense-xavier-01-1-10-92-loss-acc.png]]
+#+END_CENTER
 
-** MobileNet
+** TODO MobileNet
 * 优化算法
+优化算法主要就是在面对目标函数时,通过一定的优化策略来选择模型参数从而最小化目标函数.在深度学习中十分重要,会影响模型的收敛速度和最终模型收敛效果.所以理解常用优化算法有利于模型训练和调参.
+
+深度学习中的绝大多数目标函数都非常复杂,也就是说直接最小化目标函数的解析解一般是不存在的,所以基本都是通过基于数值方法来迭代最小化目标函数.所以如下会介绍一些这类数值方法求解函数目标解的方法.
+
+** 挑战
+优化在深度学习中面领很多挑战,主要是面对一个非常复杂的网络时,无法保证通过基于梯度的方法一定能够找到局部最小值.主要的两个挑战为:局部最小值和鞍点.
+
+*** 局部最小值
+对于目标函数 $f(x)$, 如果 $f(x)$ 在 x 上的值比在 x 临近的其他点的值更小,那么 $f(x)$ 可能是局部最小值(/local minimum/).如果 $f(x)$ 在 x 上的值是目标函数在整个定义域上的最小值,那么 $f(x)$ 是全局最小值(/global minimum/).
+
+例如,给定函数:
+\begin{equation}
+  f(x) = x * cos(\pi{x}), -1.0 \leq x \leq 2.0,
+\notag
+\end{equation}
+
+对应的函数图:
+-----
+#+BEGIN_CENTER
+[[file:assets/xcosx.png]]
+#+END_CENTER
+
+深度模型的损失函数一般具有非常多的最小值局部,基于梯度的迭代优化算法在局部最小值附近时,由于目标函数的梯度接近或者变成零,从而很容易使得优化算法无法逃出局部最小,从而使得模型无法收敛到更好的数值解.
+
+*** 鞍点
+梯度接近零和变成零的可能是由于当前解在局部最优附近造成的.其实,还有可能是在鞍点(/saddle point/)附近.
+
+例如,给定函数:
+\begin{equation}
+  f(x) = x^{3}
+\notag
+\end{equation}
+
+对应的函数图:
+-----
+#+BEGIN_CENTER
+[[file:assets/x3.png]]
+#+END_CENTER
+
+在比如,函数:
+\begin{equation}
+  f(x,y) = x^{2} - y^{2}
+\notag
+\end{equation}
+
+对应的函数图:
+----
+#+BEGIN_CENTER
+[[file:assets/x2_y2.png]]
+#+END_CENTER
+
+在上图红点上可以看到,梯度在 x,y 方向为 0;并且目标函数在 x 轴上是局部最小值,在 y 轴上是局部最大值.
+
+线性代数可知:
+#+BEGIN_QUOTE
++ 当目标函数的 Hessian 矩阵在梯度为 0 的位置上的特征值全为正时,目标函数处在局部最小值位置.
++ 当目标函数的 Hessian 矩阵在梯度为 0 的位置上的特征值全为负时,目标函数处在局部最大值位置.
++ 当目标函数的 Hessian 矩阵在梯度为 0 的位置上的特征值有正有负时,目标函数处在鞍点位置.
+#+END_QUOTE
+
+并且可以知道,假设特征值为正和为负的概率都是 0.5,那么对于一个较大的矩阵,全部特征都为正或者负的概率为 $0.5^{k}$,所以对于深度模型来说,鞍点出现的概率要比局部最小值更为常见.
+
+** 梯度下降
+迭代数值优化算法基本都是基于梯度下降算法改进的.最为原始的梯度下降算法是通过沿着梯度的反方向移动,来降低目标函数的值.
+
+数学上讲,假设连续可导函数 $f: \mathbb{R} \to \mathbb{R}$.根据一阶泰勒展开,可以得到在 x 点附近近似:
+\begin{equation}
+  f(x + \epsilon) \approx f(x) + \epsilon f'(x).
+\notag
+\end{equation}
+
+其中, $f'(x)$ 为函数 f 在 x 处的梯度.存在一个常数 $\eta>0$,使得 $|\eta{f'(x)}|$ 足够小,那么可以将 $\epsilon$ 替换为 $-\etaf'(x)$,从而采用上述等式进行近似:
+\begin{equation}
+  f(x - \eta{f'(x)}) \approx f(x) - \eta{f'(x)}^{2}
+\notag
+\end{equation}
+
+可以看到,如果 $f'(x) \ne 0$,那么 $\eta{f'(x)}^{2} > 0$ ,所以:
+\begin{equation}
+  f(x - \eta{f'(x)}) \leq f(x)
+\notag
+\end{equation}
+
+所以可以通过 $x \gets x - \eta{f'(x)}$ 迭代 x,从而降低 f(x)目标值.所以一旦进入局部最小值附近时,导数基本为 0,会出现迭代步长过小,从而无法逃出局部最小值.
+
+*** 学习率
+上述梯度下降算法中的正数 $\eta$ 就叫做学习率.是一个较为重要的超参数,需要人工设定.如果学习率较小,则会导致 x 更新速度缓慢,从而需要更多迭代才能得到较好的解.如果使用过大的学习率,$|\eta{f'(x)}|$ 可能会过大,从而使得一阶泰勒展开公式不再成立:这样就无法保证迭代的 x 会降低 f(x) 的值.
+
+** 动量法
+目标函数的梯度代表了目标函数在自变量所在位置下降速度最快的方向,所以梯度下降也叫最速下降(/stepest descent/).每次迭代中,梯度下降只会沿着当前位置的梯度方向更新自变量,这种仅仅取决于自变量所在位置更新会带来一些问题.
+
+例如,考虑目标函数 $f(x)=0.1x_{1}^{2}+2x_{2}^{2}$.以学习率为 0.4,对应的梯度更新轨迹如下:
+-----
+#+BEGIN_CENTER
+#+CAPTION: 目标函数在 $x_{2}$ 方向上的梯度绝对值要大于 $x_{1}$ 方向上.因此,给定学习率,梯度下降在 $x_{2}$ 方向上的移动幅度要大于 x1 方向上.
+[[file:assets/01x_2_2x_2_gradient.png]]
+#+END_CENTER
+
+为了避免在 $x_{2}$ 方向上越过目标函数最优解,那么需要降低学习率.然而,这会降低自变量在 $x_{1}$ 方向的收敛速度.
+
+如果将学习率再设大一些,例如 $\eta=0.6$,会使得自变量在 $x_2$ 方向移动过大,从而使得无法收敛.
+-----
+#+BEGIN_CENTER
+#+CAPTION: 学习率过大,使得在 $x_{2}$ 方向上无法收敛.
+[[file:assets/01x_2_2x_2_06_gradient.png]]
+#+END_CENTER
+
+*** 动量法
+动能法的提出就是为了应对梯度下降的上述的问题.动能法每次迭代的公式如下:
+\begin{equation}
+  \nu_{t} \gets \gamma \nu_{t-1} + \eta_{t}g_{t}, \\
+  x_{t} \gets x_{t-1} - \nu_{t}.
+\notag
+\end{equation}
+
+其中,动量超参数 $\gamma$ 满足 $0 \leq \gamma < 1$.当 $\gamma=0$ 时,动能法等价于小批量随机梯度下降.
+
+采用上述的动能法优化函数梯度更新轨迹如下:
+-----
+#+BEGIN_CENTER
+#+CAPTION: 学习率 0.4,动能参数 0.5 的动能更新轨迹.可以看到采用动能法后,在 $x_2$ 方向上的移动更加平滑,在 $x_1$ 方向上更快逼近最优解.
+[[file:assets/01x_2_2x_2_04_momentum_gradient.png]]
+#+END_CENTER
+
+-----
+#+BEGIN_CENTER
+#+CAPTION: 学习率 0.6,动能参数 0.5 的动能更新轨迹.可以看到采用动能法即使采用较大的学习率,模型也能收敛.
+[[file:assets/01x_2_2x_2_06_momentum_gradient.png]]
+#+END_CENTER
+
+*** 指数加权移动平均
+为了从数学上理解动能法,先了解一下指数加权移动平均(/exponentially weighted moving average/).给定超参数 $0 \leq \gamma < 1$,当前时间步 t 的变量 $y_t$ 是上一步时间 t-1 的变量 $y_{t-1}$ 和当前时间步 x_{t}的线性组合:
+\begin{equation}
+  y_{t} = \gamma{y_{t_1}} + (1 - \gamma)x_{t}.
+  \notag
+\end{equation}
+
+可以对 $y_{t}$ 进行展开:
+\begin{aligned}
+  y_{t} &= (1-\gamma)x_{t} + \gamma y_{t-1} \\
+  &= (1-\gamma)x_{t} + (1-\gamma)\gamma{x_{t-1}} + \gamma^{2}y_{t-2} \\
+  &= (1-\gamma)x_{t} + (1-\gamma)\gamma{x_{t-1}} + (1-\gamma)\gamma^{2}x_{t-2} + \gamma^{3}y_{t-3} \\
+  ...
+\notag
+\end{aligned}
+
+令 $n=1/(1-\gamma)$, 那么 $(1-1/n)^{n}=\gamma^{1/1-\gamma}$.由于:
+\begin{equation}
+  \lim_{n \to \infty}(1-\frac{1}{n})^{n} = exp(-1) \approx 0.3679
+\notag
+\end{equation}
+
+当 $\gamma \to 1$ 时, $\gamma^{1/(1-\gamma)}=exp(-1)$.如果把 exp(-1)当作一个比较小的数,那么近似可以忽略掉比 $\gamma^{1/(1-\gamma)}$ 高阶的项.当 $\gamma=0.95$ 时: $y_{t} \approx 0.05\sum_{i=0}^{19}0.95^{i}x_{t-i}$.
+
+所以 $y_{t}$ 可以看作是最近 $1/(1-\gamma)$ 个时间步的 $x_{t}$ 值的加权平均.
+
+*** 指数加权移动平均理解动能法
+现在,可以对动量法作变形:
+\begin{equation}
+  \nu_{t} \gets \gamma \nu_{t-1} + (1 - \gamma)(\frac{\eta_{t}}{1-\gamma}g_{t})
+\notag
+\end{equation}
+
+由指数加权移动平均的形式可得,速度变量 $\nu_{t}$ 实际上对序列 ${\eta_{t-i}g_{t-i}/(1-\gamma):i=0,...,1/(1-\gamma)-1}$ 做了指数加权移动平均.即,动量法在每个时刻的更新近似于最近 $1/(1-\gamma)$ 个时间步的更新量做了指数加权移动平均后再除以 $1-\gamma$.所以,在某个方向上如果最近的更新量都是一个方向,那么更新速度会加快;如果更新量来回反复,那么更新速度就会变慢.
+
+** Adagrad
+在之前的优化算法中,目标函数自变量都使用同一个学习率来进行迭代更新.假设目标函数为 f,自变量为一个二维向量 $\left[x_{1},x_{2} \right]^{T}$,该向量中每一个元素在迭代时使用相同的学习率进行更新:
+\begin{equation}
+  x_{1} \gets x_{1} - \eta \frac{\partial{f}}{\partial{x_{1}}}, x_{2} \gets x_{2} - \eta \frac{\partial{f}}{\partial{x_{2}}}
+\notag
+\end{equation}
+
+可以看到在两个自变量上,如果梯度值相差较大,那么需要选择一个合适的学习率使得更新迅速的自变量不会发散,更新缓慢的自变量不会收敛的太慢.动能法通过指数加权移动平均使得自变量的更新方向如果更为一致,则更新步长大;自变量的更新方向如果不一致,则更新步长小.
+
+Adagrad[fn:12] 算法会根据自变量在每个维度的梯度值大小来调整各个维度上的学习率,从而避免统一的学习率难以适应所有自变量的问题.
+
+*** Adagrad 算法
+Adagrad 算法会对更新的梯度 $g_{t}$ 逐元素平方累加变量 $s_{t}$: $s_{t} \gets s_{t-1} + g_{t} \bigodot g_{t}$.其中 $\bigodot$ 为逐元素相乘.接着,目标函数自变量中每个元素的学习率通过累加元素重新调整-下:
+\begin{equation}
+  x_{t} \gets x_{t-1} - \frac{\eta}{\sqrt{s_{t}+\epsilon}} \bigodot g_{t}
+\notag
+\end{equation}
+
+其中, $\eta$ 为学习率, $\epsilon$ 是为了维持数值稳定性而添加的常数,例如 $10^{-6}$.这样使得更新的每个自变量都具有独立的学习率.
+
+可以看到,如果目标函数有关自变量中某个元素的偏导数一直都比较大,那么该元素的学习率下降较快;反之,如果目标函数有关自变量中某个元素的偏导数一直都比较小,那么该元素的学习率下降较慢.但是由于 $s_{t}$ 一直在累加元素平方,所以学习率是一直下降的.所以当学习率在迭代早期降的较快且当前解依然不佳的时候,Adagrad 在迭代后期会因为学习较小,使得模型无法找到一个有用的解.
+
+** RMSProp
+Adagrad 通过累加梯度逐元素的平方来作为学习率调整的分母,从而使得学习率在迭代过程中一直在降低或者不变.所以 Adagrad 算法在后期会出现学习率过低,模型无法迭代的情况.为了应对这一问题,RMSProp[fn:13] 算法做了一点改动.
+
+RMSProp 可以看作是在 Adagrad 累加逐元素的平方过程中引入了动能法中的指数加权移动平均,从而使得学习率调整依赖于过去 t 个时间步的梯度平方,如此一来,学习率在迭代的过程中不会一直降低.
+\begin{equation}
+  s_{t} \gets \gamma s_{t-1} + (1-\gamma)g_{t} \bigodot g_{t}, \\
+  x_{t} \gets x_{t-1} - \frac{\eta}{\sqrt{s_{t}+\epsilon}} \bigodot g_{t}.
+\notag
+\end{equation}
+
+** Adadelta
+除了 RMSProp 以外,Adadelta [fn:14]算法也是针对 Adagrad 在迭代后期可能较难找到有用解的问题做了改进.并且 Adadelta 没有学习率这一超参.Adadelta 算法也通过指数加权移动平均累加梯度的逐元素平方和:
+\begin{equation}
+  s_{t} \gets \gamma s_{t-1} + (1-\gamma)g_{t} \bigodot g_{t},
+\notag
+\end{equation}
+
+Adadelta 另外维护了一个额外状态变量 $\Delta{x_{t}}$,来计算自变量的变化量:
+\begin{equation}
+  g_{t}' \gets \sqrt{\frac{\Delta{x_{t-1}}+\epsilon}{s_{t}+\epsilon}} \bigodot g_{t},
+\notag
+\end{equation}
+
+自变量的更新公式:
+\begin{equation}
+  x_{t} \gets x_{t-1} - g_{t}'
+\notag
+\end{equation}
+
+最后,更新 $\Delta{x}$ 来记录自变量变化量 $g'$ 安元素平方的指数加权移动平均:
+\begin{equation}
+  \Delta{x_{t}} \gets \gamma \Delta{x_{t-1}} + (1-\gamma)g_{t}' \bigodot g_{t}'.
+\notag
+\end{equation}
+
+可以看到的,Adadelta 根 RMSProp 不同之处在于使用了 $\sqrt{\Delta{x_{t-1}}}$ 来替代学习率超参.
 
 ** Adam
+Adam[fn:15] 在 RMSProp 基础上对梯度也做了指数加权移动平均:
+\begin{equation}
+  \nu_{t} \gets \beta_{1} \nu_{t-1} + (1 - \beta_{1})g_{t}
+\notag
+\end{equation}
+
+对梯度的逐元素平方项做指数加权移动平均得到 $s_{t}$:
+\begin{equation}
+  s_{t} \gets \beta_{2}s_{t-1} + (1-\beta_{2})g_{t} \bigodot g_{t}.
+\notag
+\end{equation}
+
+需要注意的是:在迭代开始时,例如 $\beta_{1}=0.9$时, $v_{1}=0.1g_{1}$,为了消除这种刚开始加权平均较小的问题,可以除以 $1-\beta_{1}^{t}$,从而使得过去的时间个时间步的权值之和为 1,叫做偏差修正.
+\begin{equation}
+  \hat{\nu}_{t} \gets \frac{\nu_{t}}{1-\beta_{1}^{t}}. \\
+  \hat{s}_{t} \gets \frac{s_{t}}{1-\beta_{2}^{t}}.
+\notag
+\end{equation}
+
+对应元素的更新量为:
+\begin{equation}
+  g_{t}' \gets \frac{\eta \hat{\nu}_{t}}{\sqrt{\hat{s}_{t}+\epsilon}}
+\notag
+\end{equation}
 
 * 归一化方法 
 有很多归一化方法,主要可以分为两种:
@@ -1179,6 +1433,14 @@ DenseNet 和 ResNet 一样,首先采用单个大卷积和最大采样层.然后�
 * 模型压缩&剪枝
 
 * Footnotes
+
+[fn:15] Adam: A method for stochastic optimization
+
+[fn:14] ADADELTA: an adaptive learning rate method
+
+[fn:13] Lecture 6.5-rmsprop: Divide the gradient by a running average of its recent magnitude
+
+[fn:12] Adaptive subgradient methods for online learning and stochastic optimization
 
 [fn:11] Densely connected convolutional networks
 
